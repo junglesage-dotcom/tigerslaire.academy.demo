@@ -3,7 +3,7 @@ import { api } from "../lib/api";
 import { useStore } from "../lib/store";
 
 export default function AdminPanel() {
-  const { user, go, toast } = useStore();
+  const { user, go, toast, confirm } = useStore();
   const [activeTab, setActiveTab] = useState<'applications' | 'mentors' | 'instructors' | 'courses'>('applications');
   const [apps, setApps] = useState<any[]>([]);
   const [mentors, setMentors] = useState<any[]>([]);
@@ -110,14 +110,20 @@ export default function AdminPanel() {
   };
 
   const handleDeleteInstructor = async (id: string) => {
-    if (!confirm("Delete this instructor?")) return;
-    try {
-      await api.deleteInstructor(id);
-      toast("Instructor deleted");
-      loadAll();
-    } catch (e: any) {
-      toast(e.message);
-    }
+    confirm({
+      title: "Delete instructor?",
+      message: "This will remove the instructor and their course assignments. This cannot be undone.",
+      confirmLabel: "Delete",
+      onConfirm: async () => {
+        try {
+          await api.deleteInstructor(id);
+          toast("Instructor deleted");
+          loadAll();
+        } catch (e: any) {
+          toast(e.message);
+        }
+      },
+    });
   };
 
   const tabs = [

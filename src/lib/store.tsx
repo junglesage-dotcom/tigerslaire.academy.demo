@@ -38,9 +38,16 @@ export type Route =
   | { view: "meetups" }
   | { view: "admin" };
 
-export interface Toast {
+interface Toast {
   id: string;
   text: string;
+}
+
+interface ConfirmState {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  onConfirm: () => void;
 }
 
 interface StoreCtx {
@@ -61,6 +68,9 @@ interface StoreCtx {
   submitQuiz: (courseId: string, score: number, total: number) => Promise<boolean>;
   linkTelegram: () => Promise<void>;
   unlinkTelegram: () => Promise<void>;
+  confirmState: ConfirmState | null;
+  confirm: (opts: { title?: string; message: string; confirmLabel?: string; onConfirm: () => void }) => void;
+  closeConfirm: () => void;
 }
 
 const Ctx = createContext<StoreCtx | null>(null);
@@ -72,6 +82,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [authOpen, setAuthOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem("tigerslair.token");
@@ -234,6 +245,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [toast, user]);
 
+  const closeConfirm = useCallback(() => setConfirmState(null), []);
+
+  const confirm = useCallback(
+    (opts: { title?: string; message: string; confirmLabel?: string; onConfirm: () => void }) => {
+      setConfirmState({
+        title: opts.title ?? "Are you sure?",
+        message: opts.message,
+        confirmLabel: opts.confirmLabel ?? "Confirm",
+        onConfirm: opts.onConfirm,
+      });
+    },
+    []
+  );
+
   const value: StoreCtx = {
     user,
     route,
@@ -252,6 +277,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     submitQuiz,
     linkTelegram,
     unlinkTelegram,
+    confirmState,
+    confirm,
+    closeConfirm,
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

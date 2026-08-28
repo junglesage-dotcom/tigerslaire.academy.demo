@@ -4,7 +4,7 @@ import { useStore } from "../lib/store";
 import { getYouTubeEmbedUrl } from "../lib/youtube";
 
 export default function CourseEditor({ courseId }: { courseId: string }) {
-  const { go, toast } = useStore();
+  const { go, toast, confirm } = useStore();
   const [course, setCourse] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'details' | 'modules' | 'lessons' | 'quiz' | 'resources'>('details');
@@ -102,14 +102,20 @@ export default function CourseEditor({ courseId }: { courseId: string }) {
   };
 
   const handleDeleteLesson = async (lessonId: string) => {
-    if (!confirm("Delete this lesson?")) return;
-    try {
-      await api.deleteLesson(lessonId);
-      toast("Lesson deleted");
-      loadCourse();
-    } catch (e: any) {
-      toast(e.message);
-    }
+    confirm({
+      title: "Delete lesson?",
+      message: "This will permanently remove the lesson and its resources. This cannot be undone.",
+      confirmLabel: "Delete",
+      onConfirm: async () => {
+        try {
+          await api.deleteLesson(lessonId);
+          toast("Lesson deleted");
+          loadCourse();
+        } catch (e: any) {
+          toast(e.message);
+        }
+      },
+    });
   };
 
   const handleAddQuiz = async (e: React.FormEvent) => {
@@ -159,7 +165,11 @@ export default function CourseEditor({ courseId }: { courseId: string }) {
   };
 
   const handleDeleteResource = async (resourceId: string) => {
-    if (!confirm('Delete this resource?')) return;
+    confirm({
+      title: "Delete resource?",
+      message: "This resource will be permanently removed from the lesson.",
+      confirmLabel: "Delete",
+      onConfirm: async () => {
     try {
       await api.deleteResource(resourceId);
       toast('Resource deleted');
@@ -167,9 +177,11 @@ export default function CourseEditor({ courseId }: { courseId: string }) {
     } catch (e: any) {
       toast(e.message);
     }
-  };
+    },
+    });
+    };
 
-  if (loading) return <div className="p-8 text-amber">Loading course...</div>;
+    if (loading) return <div className="p-8 text-amber">Loading course...</div>;
   if (!course) return <div className="p-8 text-alert">Course not found</div>;
 
   const tabs = [

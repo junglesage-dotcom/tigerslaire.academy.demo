@@ -313,8 +313,51 @@ export function TelegramModal() {
             )}
           </>
         )}
+
       </div>
     </Overlay>
   );
 }
 
+/* ================= CONFIRM ================= */
+
+export function ConfirmModal() {
+  const { confirmState, closeConfirm } = useStore();
+  if (!confirmState) return null;
+  const { title, message, confirmLabel, onConfirm } = confirmState;
+  return (
+    <Overlay onClose={closeConfirm} label={title}>
+      <div className="rounded-lg border border-bone/15 bg-ink p-6 shadow-[0_40px_100px_-20px_rgba(0,0,0,0.9)] sm:p-8">
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.24em] text-amber">
+              <IconClaw className="h-3.5 w-3.5" /> Confirm action
+            </p>
+            <h2 className="mt-2 font-display text-xl font-extrabold text-bone">{title}</h2>
+          </div>
+          <button onClick={closeConfirm} aria-label="Close" className="text-smoke transition-colors hover:text-bone">
+            <IconX className="h-5 w-5" />
+          </button>
+        </div>
+        <p className="mt-3 text-sm leading-relaxed text-smoke">{message}</p>
+        <div className="mt-5 flex gap-3">
+          <button
+            onClick={closeConfirm}
+            className="flex-1 rounded-md border border-bone/15 px-4 py-2.5 text-sm font-bold text-bone transition-colors hover:bg-bone/5"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => {
+              closeConfirm();
+              onConfirm();
+            }}
+            className="flex-1 rounded-md bg-alert px-4 py-2.5 text-sm font-bold uppercase tracking-[0.1em] text-ink transition-colors hover:bg-alert/90"
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </Overlay>
+  );
+}

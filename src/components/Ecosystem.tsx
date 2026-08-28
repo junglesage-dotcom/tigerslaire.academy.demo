@@ -166,8 +166,8 @@ export function Ecosystem() {
               <g
                 key={n.id}
                 onClick={() => setActive(n.id)}
-                onMouseEnter={() => setHover(n.id)}
-                onMouseLeave={() => setHover(null)}
+                onPointerEnter={() => setHover(n.id)}
+                onPointerLeave={() => setHover(null)}
                 style={{ cursor: "pointer" }}
                 role="button"
                 aria-label={`${n.label}: ${n.desc}`}

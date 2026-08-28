@@ -11,7 +11,7 @@ import MentorshipDashboard from "./views/MentorshipDashboard";
 import CounselingBook from "./views/CounselingBook";
 import Meetups from "./views/Meetups";
 import AdminPanel from "./views/AdminPanel";
-import { AuthModal } from "./components/Modals";
+import { AuthModal, ConfirmModal } from "./components/Modals";
 import { IconClaw, IconMenu, IconX } from "./components/Icons";
 
 function StatusStrip() {
@@ -231,6 +231,7 @@ function Shell() {
       <Footer />
       <Toasts />
       {authOpen && <AuthModal />}
+      <ConfirmModal />
     </div>
   );
 }
