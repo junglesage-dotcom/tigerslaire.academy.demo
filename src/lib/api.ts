@@ -1,5 +1,5 @@
 // src/lib/api.ts
-const API_BASE = 'https://tigerslair-api.ehisferguson.workers.dev'; // REPLACE WITH YOUR URL
+const API_BASE = 'https://tigerslair-api.ehisferguson.workers.dev';
 
 function getToken(): string | null {
   return localStorage.getItem('tigerslair.token');
