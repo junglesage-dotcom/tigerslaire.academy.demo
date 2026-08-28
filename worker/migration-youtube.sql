@@ -1,0 +1,1 @@
+ALTER TABLE lessons ADD COLUMN youtube_url TEXT;

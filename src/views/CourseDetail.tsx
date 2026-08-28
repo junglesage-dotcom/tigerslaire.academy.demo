@@ -1,544 +1,808 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import { api } from "../lib/api";
 import { useStore } from "../lib/store";
-import { getCourse, courseLessons, courseMinutes, fmtNaira } from "../data/courses";
-import type { Course, Lesson } from "../data/courses";
-import { Reveal, Ring, Kicker } from "../components/ui";
-import {
-  IconArrowRight,
-  IconCheck,
-  IconClipboard,
-  IconClock,
-  IconCopy,
-  IconDoc,
-  IconLock,
-  IconMegaphone,
-  IconPlane,
-  IconPlay,
-  IconSeal,
-  IconTerminal,
-} from "../components/Icons";
+import ResourcePlayer from "../components/ResourcePlayer";
+import { IconClaw, IconPlane } from "../components/Icons";
 
-/* ---------------- fake lecture player ---------------- */
-function FakePlayer({ lesson, hue }: { lesson: Lesson; hue: string }) {
-  const [playing, setPlaying] = useState(false);
-  return (
-    <div className="grid-lines relative flex aspect-video items-center justify-center overflow-hidden rounded-md border border-bone/12 bg-[#120c05]">
-      {playing ? (
-        <div className="flex flex-col items-center gap-4">
-          <div className="flex h-10 items-end gap-1.5" aria-hidden>
-            {[0.9, 0.5, 1.1, 0.7, 1.3].map((d, i) => (
-              <span key={i} className="eq-bar h-9 w-1.5 rounded-sm" style={{ background: hue, animationDelay: `${i * 0.12}s`, animationDuration: `${d}s` }} />
-            ))}
-          </div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-smoke">
-            streaming from R2 · channel msg #{lesson.msg}
-          </p>
-          <button onClick={() => setPlaying(false)} className="font-mono text-[10px] uppercase tracking-[0.18em] text-smoke underline decoration-dotted underline-offset-4 hover:text-bone">
-            pause lecture
-          </button>
-        </div>
-      ) : (
-        <button onClick={() => setPlaying(true)} className="group flex flex-col items-center gap-3" aria-label={`Play lecture: ${lesson.title}`}>
-          <span className="flex h-16 w-16 items-center justify-center rounded-full border-2 transition-transform group-hover:scale-110" style={{ borderColor: hue, color: hue }}>
-            <IconPlay className="h-7 w-7 translate-x-0.5" />
-          </span>
-          <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-smoke">
-            {lesson.minutes} min lecture · preview
-          </span>
-        </button>
-      )}
-    </div>
-  );
-}
+export default function CourseDetail({ courseId }: { courseId: string }) {
+  const { user, isEnrolled, enroll, completeLesson: markComplete, submitQuiz, go, toast, setAuthOpen } = useStore();
+  const [course, setCourse] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [completedLessons, setCompletedLessons] = useState<string[]>([]);
+  const [quizAnswers, setQuizAnswers] = useState<Record<number, number>>({});
+  const [quizSubmitted, setQuizSubmitted] = useState(false);
+  const [quizScore, setQuizScore] = useState<{ score: number; total: number; passed: boolean } | null>(null);
+  const [showReview, setShowReview] = useState(false);
+  const [activeTab, setActiveTab] = useState<'overview' | 'curriculum' | 'quiz' | 'certificate'>('overview');
+  const [expandedModule, setExpandedModule] = useState<number | null>(0);
+  const [enrollConfirm, setEnrollConfirm] = useState(false);
+  const [lessonResources, setLessonResources] = useState<Record<string, any[]>>({});
 
-/* ---------------- quiz runner ---------------- */
-function QuizRunner({ course }: { course: Course }) {
-  const { submitQuiz, enrollmentFor } = useStore();
-  const enr = enrollmentFor(course.id);
-  const [answers, setAnswers] = useState<Record<number, number>>({});
-  const [submitted, setSubmitted] = useState(false);
-  const [score, setScore] = useState(0);
-  const allAnswered = course.quiz.every((_, i) => answers[i] !== undefined);
+  useEffect(() => {
+    loadCourse();
+  }, [courseId]);
 
-  const submit = () => {
-    const s = course.quiz.reduce((a, q, i) => a + (answers[i] === q.answer ? 1 : 0), 0);
-    setScore(s);
-    setSubmitted(true);
-    submitQuiz(course.id, s, course.quiz.length);
+  const loadCourse = async () => {
+    setLoading(true);
+    try {
+      const res = await api.getCourse(courseId);
+      setCourse(res.data);
+      setCompletedLessons([]);
+      setQuizAnswers({});
+      setQuizSubmitted(false);
+      setQuizScore(null);
+      setShowReview(false);
+      setActiveTab('overview');
+      setExpandedModule(0);
+    } catch (e: any) {
+      toast("Failed to load course: " + (e.message || "Unknown error"));
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const passed = enr?.quizPassed ?? false;
+  // Load resources when course loads:
+  useEffect(() => {
+    if (!course) return;
+    course.modules.forEach(async (m: any) => {
+      for (const lesson of m.lessons || []) {
+        try {
+          const res = await api.getResources(courseId, lesson.id);
+          setLessonResources(prev => ({ ...prev, [lesson.id]: res.data }));
+        } catch (e) { /* ignore */ }
+      }
+    });
+  }, [course]);
 
-  return (
-    <div>
-      {passed && (
-        <div className="mb-5 flex items-center gap-3 rounded-md border border-mint/30 bg-mint/10 px-4 py-3">
-          <IconSeal className="h-5 w-5 text-mint" />
-          <p className="text-sm text-bone">
-            Gate quiz passed — <span className="font-bold text-mint">{enr?.quizScore}/{enr?.quizTotal}</span>. Finish the remaining lessons to mint your certificate.
-          </p>
-        </div>
-      )}
-      <div className="space-y-6">
-        {course.quiz.map((q, qi) => (
-          <div key={qi} className="rounded-md border border-bone/12 bg-coal p-5">
-            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-smoke">
-              Question {qi + 1} / {course.quiz.length}
-            </p>
-            <h4 className="mt-2 font-display text-lg font-bold text-bone">{q.q}</h4>
-            <div className="mt-4 grid gap-2.5">
-              {q.options.map((opt, oi) => {
-                const chosen = answers[qi] === oi;
-                const isCorrect = q.answer === oi;
-                let cls = "border-bone/12 text-smoke hover:border-amber/60 hover:text-bone";
-                if (submitted) {
-                  if (isCorrect) cls = "border-mint/60 bg-mint/10 text-mint";
-                  else if (chosen) cls = "border-alert/60 bg-alert/10 text-alert";
-                  else cls = "border-bone/8 text-smoke/50";
-                } else if (chosen) {
-                  cls = "border-amber bg-amber/10 text-bone";
-                }
-                return (
-                  <button
-                    key={oi}
-                    disabled={submitted}
-                    onClick={() => setAnswers((a) => ({ ...a, [qi]: oi }))}
-                    className={`flex items-center gap-3 rounded-md border px-4 py-3 text-left text-sm transition-colors ${cls}`}
-                  >
-                    <span className="font-mono text-[10px] font-bold">{String.fromCharCode(65 + oi)}</span>
-                    {opt}
-                    {submitted && isCorrect && <IconCheck className="ml-auto h-4 w-4 shrink-0" />}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
+  const handleEnroll = async () => {
+    if (!user) {
+      setAuthOpen(true);
+      return;
+    }
+    try {
+      await enroll(courseId);
+      toast("Enrolled successfully! Welcome to " + course.code);
+      setEnrollConfirm(false);
+    } catch (e: any) {
+      toast(e.message || "Enrollment failed");
+    }
+  };
 
-      {!submitted ? (
-        <button
-          onClick={submit}
-          disabled={!allAnswered}
-          className={`mt-6 w-full rounded-md px-4 py-3.5 font-display text-sm font-extrabold uppercase tracking-[0.08em] transition-all ${
-            allAnswered ? "stripe-btn bg-amber text-ink hover:-translate-y-0.5" : "cursor-not-allowed bg-soot text-smoke/60"
-          }`}
-        >
-          {allAnswered ? "Submit answers" : `Answer all ${course.quiz.length} to submit`}
-        </button>
-      ) : (
-        <div className={`mt-6 rounded-md border p-5 text-center ${score / course.quiz.length >= 0.7 ? "border-mint/40 bg-mint/10" : "border-alert/40 bg-alert/10"}`}>
-          <p className="font-display text-3xl font-extrabold text-bone">
-            {score}/{course.quiz.length}
-          </p>
-          <p className={`mt-1 font-mono text-[11px] uppercase tracking-[0.18em] ${score / course.quiz.length >= 0.7 ? "text-mint" : "text-alert"}`}>
-            {score / course.quiz.length >= 0.7 ? "Passed — the gate is open" : "Below the 70% bar — review and retry"}
-          </p>
-          {score / course.quiz.length < 0.7 && (
-            <button onClick={() => { setAnswers({}); setSubmitted(false); }} className="mt-4 rounded-md border border-bone/20 px-5 py-2.5 text-sm text-bone transition-colors hover:border-amber hover:text-amber">
-              Retry the quiz
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
+  const handleCompleteLesson = async (lessonId: string, lessonTitle: string) => {
+    if (!user) {
+      setAuthOpen(true);
+      return;
+    }
+    try {
+      await markComplete(courseId, lessonId);
+      setCompletedLessons([...completedLessons, lessonId]);
+      toast("✓ " + lessonTitle);
+    } catch (e: any) {
+      toast(e.message || "Failed to mark lesson");
+    }
+  };
 
-/* ---------------- certificate ---------------- */
-function CertificateCard({ course }: { course: Course }) {
-  const { user, certificateId, toast } = useStore();
-  const id = certificateId(course.id);
-  if (!id || !user) return null;
-  return (
-    <div className="toast-in relative overflow-hidden rounded-lg border-2 border-amber/70 bg-coal p-6">
-      <div className="pointer-events-none absolute -right-6 -top-6 opacity-10" aria-hidden>
-        <IconSeal className="h-32 w-32 text-amber" />
-      </div>
-      <p className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.24em] text-amber">
-        <IconSeal className="h-4 w-4" /> Certificate issued
-      </p>
-      <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.2em] text-smoke">This certifies that</p>
-      <p className="font-display text-2xl font-extrabold text-bone">{user.name}</p>
-      <p className="mt-1 text-sm text-smoke">completed {course.title} · {course.weeks} weeks</p>
-      <div className="mt-4 flex items-center justify-between gap-3 border-t border-dashed border-bone/15 pt-4">
-        <div>
-          <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-smoke">Verify with ID</p>
-          <p className="font-mono text-sm font-bold tracking-[0.1em] text-amber">{id}</p>
-        </div>
-        <button
-          onClick={() => {
-            navigator.clipboard?.writeText(id).catch(() => undefined);
-            toast("Certificate ID copied");
-          }}
-          className="flex items-center gap-2 rounded border border-bone/15 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-smoke transition-colors hover:border-amber hover:text-amber"
-        >
-          <IconCopy className="h-3.5 w-3.5" /> Copy
-        </button>
-      </div>
-    </div>
-  );
-}
+  const handleQuizAnswer = (questionIndex: number, optionIndex: number) => {
+    if (quizSubmitted) return;
+    setQuizAnswers({ ...quizAnswers, [questionIndex]: optionIndex });
+  };
 
-/* ---------------- main view ---------------- */
-export default function CourseDetail({ courseId }: { courseId: string }) {
-  const course = getCourse(courseId);
-  const { user, go, setAuthOpen, enroll, isEnrolled, enrollmentFor, completeLesson, progressOf, toast } = useStore();
-  const lessons = useMemo(() => (course ? courseLessons(course) : []), [course]);
-  const viewerRef = useRef<HTMLDivElement>(null);
+  const handleSubmitQuiz = async () => {
+    if (!user) {
+      setAuthOpen(true);
+      return;
+    }
+    if (!course?.quiz || course.quiz.length === 0) {
+      toast("No quiz available");
+      return;
+    }
+    if (Object.keys(quizAnswers).length < course.quiz.length) {
+      toast("Please answer all questions before submitting");
+      return;
+    }
 
-  const enrolled = course ? isEnrolled(course.id) : false;
-  const enr = course ? enrollmentFor(course.id) : undefined;
-  const completed = enr?.completed ?? [];
-  const progress = course ? progressOf(course.id) : 0;
+    let score = 0;
+    course.quiz.forEach((q: any, i: number) => {
+      if (quizAnswers[i] === q.answer) score++;
+    });
 
-  const [view, setView] = useState<{ kind: "lesson"; id: string } | { kind: "quiz" }>(() => {
-    const firstOpen = lessons.find((l) => !completed.includes(l.id));
-    return firstOpen ? { kind: "lesson", id: firstOpen.id } : { kind: "quiz" };
-  });
+    const total = course.quiz.length;
+    const passed = score / total >= 0.7;
 
-  if (!course) {
+    try {
+      await submitQuiz(courseId, score, total);
+      setQuizScore({ score, total, passed });
+      setQuizSubmitted(true);
+      if (passed) {
+        toast("🎉 Quiz passed! You're one step from your certificate.");
+      } else {
+        toast("Quiz not passed. You need 70% to pass. Review and try again.");
+      }
+    } catch (e: any) {
+      toast(e.message || "Failed to submit quiz");
+    }
+  };
+
+  const stats = useMemo(() => {
+    if (!course) return { totalLessons: 0, totalMinutes: 0, modules: 0 };
+    const totalLessons = course.modules.reduce((sum: number, m: any) => sum + (m.lessons?.length || 0), 0);
+    const totalMinutes = course.modules.reduce(
+      (sum: number, m: any) => sum + (m.lessons?.reduce((s: number, l: any) => s + (l.minutes || 0), 0) || 0),
+      0
+    );
+    return { totalLessons, totalMinutes, modules: course.modules.length };
+  }, [course]);
+
+  const progress = useMemo(() => {
+    if (stats.totalLessons === 0) return 0;
+    return Math.round((completedLessons.length / stats.totalLessons) * 100);
+  }, [completedLessons, stats.totalLessons]);
+
+  const courseComplete = progress === 100 && quizScore?.passed;
+
+  const certificateId = useMemo(() => {
+    if (!courseComplete || !user) return null;
+    const serial = (user.id + courseId).split("").reduce((a, ch) => a + ch.charCodeAt(0), 0);
+    return "TL-" + course.code + "-" + String(serial * 7).slice(-6);
+  }, [courseComplete, user, courseId, course]);
+
+  if (loading) {
     return (
-      <div className="mx-auto max-w-3xl px-5 py-32 text-center">
-        <p className="font-display text-4xl font-extrabold text-bone">That course wandered off.</p>
-        <button onClick={() => go({ view: "courses" })} className="mt-6 rounded-md bg-amber px-6 py-3 font-display text-sm font-extrabold uppercase tracking-[0.08em] text-ink">
-          Back to the catalogue
-        </button>
+      <div className="mx-auto max-w-6xl px-5 py-16 text-center sm:px-8">
+        <div className="inline-flex items-center gap-3 rounded-lg border border-bone/10 bg-coal px-6 py-4">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-amber border-t-transparent" />
+          <p className="font-mono text-sm uppercase tracking-widest text-amber">Loading course data...</p>
+        </div>
       </div>
     );
   }
 
-  const idxOf = (id: string) => lessons.findIndex((l) => l.id === id);
-  const isUnlocked = (i: number) => i === 0 || completed.includes(lessons[i - 1].id);
-  const quizUnlocked = completed.length >= Math.ceil(lessons.length * 0.6);
-  const currentId = lessons.find((l, i) => !completed.includes(l.id) && isUnlocked(i))?.id;
-
-  const selectLesson = (id: string) => {
-    setView({ kind: "lesson", id });
-    requestAnimationFrame(() => viewerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
-  };
-
-  const handleEnroll = () => {
-    if (!user) {
-      setAuthOpen(true);
-      toast("Create a student record first — it takes ten seconds");
-      return;
-    }
-    enroll(course.id);
-  };
-
-  const handleComplete = (lesson: Lesson) => {
-    completeLesson(course.id, lesson.id);
-    const i = idxOf(lesson.id);
-    // j === i + 1 just became unlocked by this completion, even though local state is stale
-    const nextUncompleted = lessons.find(
-      (l, j) => j > i && !completed.includes(l.id) && (j === i + 1 || completed.includes(lessons[j - 1].id))
+  if (!course) {
+    return (
+      <div className="mx-auto max-w-5xl px-5 py-16 text-center sm:px-8">
+        <div className="rounded-lg border border-alert/30 bg-alert/5 p-8">
+          <p className="font-display text-2xl font-bold text-alert mb-2">Course Not Found</p>
+          <p className="text-smoke mb-4">The course you're looking for doesn't exist or has been removed.</p>
+          <button onClick={() => go({ view: "courses" })} className="rounded-md bg-amber px-6 py-2 font-display text-sm font-extrabold uppercase tracking-widest text-ink">
+            Back to Courses
+          </button>
+        </div>
+      </div>
     );
-    const anyRemaining = lessons.some((l, j) => j > i && !completed.includes(l.id));
-    if (nextUncompleted) selectLesson(nextUncompleted.id);
-    else if (!anyRemaining && quizUnlocked && !enr?.quizPassed) setView({ kind: "quiz" });
-  };
+  }
 
-  const selectedLesson = view.kind === "lesson" ? lessons.find((l) => l.id === view.id) : undefined;
-  const selIdx = selectedLesson ? idxOf(selectedLesson.id) : -1;
-  const selUnlocked = !enrolled ? selIdx === 0 : selIdx >= 0 && isUnlocked(selIdx);
-  const selCompleted = selectedLesson ? completed.includes(selectedLesson.id) : false;
-  const hours = Math.round(courseMinutes(course) / 60);
+  const enrolled = isEnrolled(courseId);
+
+  const tabs = [
+    { id: 'overview', label: 'Overview', icon: '📋' },
+    { id: 'curriculum', label: 'Curriculum', icon: '📚' },
+    { id: 'quiz', label: 'Gate Quiz', icon: '🎯' },
+    { id: 'certificate', label: 'Certificate', icon: '🏆' },
+  ] as const;
 
   return (
-    <div className="mx-auto max-w-7xl px-5 py-12 sm:px-8 sm:py-16">
-      <button onClick={() => go({ view: "courses" })} className="group flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.2em] text-smoke transition-colors hover:text-amber">
-        <IconArrowRight className="h-3.5 w-3.5 rotate-180 transition-transform group-hover:-translate-x-1" />
-        All courses
+    <div className="mx-auto max-w-6xl px-5 py-8 sm:px-8">
+      {/* Breadcrumb */}
+      <button onClick={() => go({ view: "courses" })} className="mb-6 flex items-center gap-2 text-sm text-smoke hover:text-amber transition-colors">
+        <span>←</span>
+        <span>Back to Course Catalog</span>
       </button>
 
-      {/* header */}
-      <div className="mt-8 flex flex-wrap items-end justify-between gap-8 border-b border-bone/10 pb-10">
-        <div className="max-w-2xl">
-          <Reveal>
-            <Kicker>{course.code} · {course.path}</Kicker>
-          </Reveal>
-          <Reveal delay={80}>
-            <h1 className="mt-3 font-display text-4xl font-extrabold leading-[0.98] tracking-tight text-bone sm:text-6xl">{course.title}</h1>
-          </Reveal>
-          <Reveal delay={160}>
-            <p className="mt-5 leading-relaxed text-smoke">{course.summary}</p>
-          </Reveal>
-          <Reveal delay={220}>
-            <div className="mt-6 flex flex-wrap gap-2">
-              {[`${course.weeks} weeks`, `${lessons.length} lessons`, `${hours}h material`, course.level, "certificate included"].map((chip) => (
-                <span key={chip} className="rounded-full border border-bone/12 px-3.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-smoke">
-                  {chip}
-                </span>
-              ))}
-            </div>
-          </Reveal>
-        </div>
-        <Reveal delay={200}>
-          <div className="text-right">
-            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-smoke">Course fee</p>
-            <p className="font-display text-5xl font-extrabold text-amber">{fmtNaira(course.price)}</p>
-            <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-smoke/70">one-time · lifetime access</p>
+      {/* Hero Section */}
+      <div className="relative overflow-hidden rounded-2xl border border-bone/10 bg-gradient-to-br from-coal via-ink to-coal p-8 sm:p-12 mb-8">
+        <div className="absolute inset-0 grid-lines opacity-30" />
+        <div className="relative">
+          <div className="flex flex-wrap items-center gap-3 mb-4">
+            <span className="rounded-md px-3 py-1 text-xs font-bold uppercase tracking-wider" style={{ backgroundColor: course.hue + '20', color: course.hue }}>
+              {course.code}
+            </span>
+            <span className="rounded-md bg-bone/5 px-3 py-1 text-xs font-bold uppercase tracking-wider text-bone">
+              {course.level}
+            </span>
+            <span className="rounded-md bg-bone/5 px-3 py-1 text-xs font-bold uppercase tracking-wider text-bone">
+              {course.path}
+            </span>
           </div>
-        </Reveal>
-      </div>
 
-      <div className="mt-10 grid gap-10 lg:grid-cols-12">
-        {/* ---- syllabus ---- */}
-        <div className="lg:col-span-5">
-          <h2 className="font-display text-xl font-extrabold text-bone">The trail</h2>
-          <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.18em] text-smoke/70">
-            {enrolled ? `${completed.length}/${lessons.length} lessons complete` : "lesson 01 is free to preview"}
+          <h1 className="font-display text-4xl font-extrabold tracking-tight text-bone sm:text-5xl lg:text-6xl mb-4">
+            {course.title}
+          </h1>
+          <p className="text-lg sm:text-xl text-smoke max-w-3xl leading-relaxed mb-8">
+            {course.tagline}
           </p>
 
-          <div className="mt-5 space-y-7">
-            {course.modules.map((m, mi) => (
-              <div key={m.title}>
-                <p className="mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.24em]" style={{ color: course.hue }}>
-                  Module {String(mi + 1).padStart(2, "0")} — {m.title}
-                </p>
-                <div className="overflow-hidden rounded-md border border-bone/12">
-                  {m.lessons.map((l) => {
-                    const i = idxOf(l.id);
-                    const unlocked = enrolled ? isUnlocked(i) : i === 0;
-                    const done = completed.includes(l.id);
-                    const active = view.kind === "lesson" && view.id === l.id;
-                    const isCurrent = enrolled && !done && l.id === currentId;
-                    return (
-                      <button
-                        key={l.id}
-                        onClick={() => unlocked && selectLesson(l.id)}
-                        disabled={!unlocked}
-                        className={`lesson-row flex w-full items-center gap-3 border-b border-bone/8 px-4 py-3.5 text-left last:border-b-0 ${
-                          active ? "bg-soot" : unlocked ? "bg-coal hover:bg-soot/70" : "cursor-not-allowed bg-coal/50 opacity-60"
-                        } ${isCurrent ? "border-l-2 border-l-amber" : ""}`}
-                        style={{ borderLeftWidth: isCurrent ? 2 : undefined }}
-                      >
-                        <span
-                          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border ${
-                            done ? "border-mint/50 bg-mint/15 text-mint" : unlocked ? "border-bone/20 text-bone" : "border-bone/10 text-smoke/50"
-                          }`}
-                        >
-                          {done ? <IconCheck className="h-3.5 w-3.5" /> : unlocked ? (
-                            <span className="font-mono text-[10px] font-bold">{String(i + 1).padStart(2, "0")}</span>
-                          ) : (
-                            <IconLock className="h-3 w-3" />
-                          )}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className={`block truncate text-sm font-semibold ${done ? "text-smoke line-through decoration-mint/50" : "text-bone"}`}>
-                            {l.title}
-                          </span>
-                          <span className="mt-0.5 flex items-center gap-2 font-mono text-[9.5px] uppercase tracking-[0.1em] text-smoke/70">
-                            <IconClock className="h-3 w-3" /> {l.minutes} min
-                            {l.tags.slice(0, 3).map((t) => (
-                              <span key={t} className="rounded-sm border border-bone/10 px-1.5 py-px">{t}</span>
-                            ))}
-                          </span>
-                        </span>
-                        <span className="shrink-0 font-mono text-[9.5px] tracking-[0.06em] text-tgsky/80">#{l.msg}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+          {/* Stats Row */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+            <div className="rounded-lg border border-bone/10 bg-ink/50 p-4">
+              <p className="text-xs font-mono uppercase tracking-widest text-smoke mb-1">Duration</p>
+              <p className="font-display text-2xl font-bold text-bone">{course.weeks}<span className="text-sm text-smoke ml-1">weeks</span></p>
+            </div>
+            <div className="rounded-lg border border-bone/10 bg-ink/50 p-4">
+              <p className="text-xs font-mono uppercase tracking-widest text-smoke mb-1">Lessons</p>
+              <p className="font-display text-2xl font-bold text-bone">{stats.totalLessons}</p>
+            </div>
+            <div className="rounded-lg border border-bone/10 bg-ink/50 p-4">
+              <p className="text-xs font-mono uppercase tracking-widest text-smoke mb-1">Total Time</p>
+              <p className="font-display text-2xl font-bold text-bone">{Math.round(stats.totalMinutes / 60)}<span className="text-sm text-smoke ml-1">hrs</span></p>
+            </div>
+            <div className="rounded-lg border border-bone/10 bg-ink/50 p-4">
+              <p className="text-xs font-mono uppercase tracking-widest text-smoke mb-1">Modules</p>
+              <p className="font-display text-2xl font-bold text-bone">{stats.modules}</p>
+            </div>
+          </div>
 
-            {/* quiz gate */}
-            <button
-              onClick={() => enrolled && quizUnlocked && setView({ kind: "quiz" })}
-              disabled={!enrolled || !quizUnlocked}
-              className={`flex w-full items-center gap-4 rounded-md border p-4 text-left transition-colors ${
-                view.kind === "quiz" ? "border-amber bg-amber/10" : enrolled && quizUnlocked ? "border-amber/40 bg-coal hover:bg-soot" : "cursor-not-allowed border-bone/10 bg-coal/50 opacity-60"
-              }`}
-            >
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-amber/50 text-amber">
-                <IconSeal className="h-5 w-5" />
-              </span>
-              <span>
-                <span className="block font-display text-base font-extrabold text-bone">Gate quiz — {course.quiz.length} questions</span>
-                <span className="mt-0.5 block font-mono text-[10px] uppercase tracking-[0.14em] text-smoke">
-                  {enr?.quizPassed ? `passed · ${enr.quizScore}/${enr.quizTotal}` : quizUnlocked ? "pass ≥ 70% to finish the course" : `unlocks at ${Math.ceil(lessons.length * 0.6)} lessons complete`}
-                </span>
-              </span>
-            </button>
+          {/* Enrollment CTA */}
+          {!enrolled && (
+            <div className="flex flex-wrap items-center gap-4">
+              <div>
+                <p className="font-display text-4xl font-extrabold" style={{ color: course.hue }}>
+                  ₦{course.price?.toLocaleString()}
+                </p>
+                <p className="text-xs text-smoke mt-1">One-time payment • Lifetime access</p>
+              </div>
+              <button
+                onClick={() => setEnrollConfirm(true)}
+                className="stripe-btn rounded-md px-8 py-4 font-display text-sm font-extrabold uppercase tracking-widest text-ink transition-transform hover:-translate-y-0.5"
+                style={{ backgroundColor: course.hue }}
+              >
+                Enroll Now →
+              </button>
+            </div>
+          )}
+
+          {/* Enrolled Progress */}
+          {enrolled && (
+            <div className="rounded-lg border border-bone/10 bg-ink/50 p-4">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-mono uppercase tracking-widest text-smoke">Your Progress</p>
+                <p className="font-display text-lg font-bold" style={{ color: course.hue }}>{progress}%</p>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-bone/10">
+                <div
+                  className="h-full rounded-full transition-all duration-500"
+                  style={{ width: progress + '%', backgroundColor: course.hue }}
+                />
+              </div>
+              <div className="mt-2 flex justify-between text-xs text-smoke">
+                <span>{completedLessons.length} of {stats.totalLessons} lessons</span>
+                {courseComplete && <span className="text-mint font-bold">✓ Course Complete</span>}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Enrollment Confirmation Modal */}
+      {enrollConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/90 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl border border-bone/10 bg-coal p-8">
+            <h3 className="font-display text-2xl font-bold text-bone mb-4">Confirm Enrollment</h3>
+            <p className="text-smoke mb-6">
+              You're about to enroll in <span className="font-bold text-bone">{course.code}: {course.title}</span> for <span className="font-bold" style={{ color: course.hue }}>₦{course.price?.toLocaleString()}</span>.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setEnrollConfirm(false)}
+                className="flex-1 rounded-md border border-bone/20 px-4 py-3 font-display text-sm font-bold uppercase tracking-widest text-bone hover:bg-bone/5"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleEnroll}
+                className="flex-1 stripe-btn rounded-md px-4 py-3 font-display text-sm font-extrabold uppercase tracking-widest text-ink"
+                style={{ backgroundColor: course.hue }}
+              >
+                Confirm & Pay
+              </button>
+            </div>
           </div>
         </div>
+      )}
 
-        {/* ---- viewer / aside ---- */}
-        <div className="lg:col-span-7">
-          <div ref={viewerRef} className="space-y-6 scroll-mt-28 lg:sticky lg:top-28">
-            {!enrolled && (
-              <div className="rounded-lg border border-bone/12 bg-coal p-6">
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                  <div>
-                    <p className="font-display text-lg font-extrabold text-bone">Enrol to walk the full trail</p>
-                    <p className="mt-1 text-sm text-smoke">
-                      {lessons.length} lessons, weekly channel drops, graded assignments, gate quiz and a verifiable certificate.
+      {/* Tabs */}
+      <div className="mb-8 flex gap-1 overflow-x-auto border-b border-bone/10">
+        {tabs.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setActiveTab(t.id)}
+            className={`flex items-center gap-2 whitespace-nowrap px-5 py-3 font-display text-sm font-bold transition-colors ${
+              activeTab === t.id ? 'text-amber border-b-2 border-amber' : 'text-smoke hover:text-bone'
+            }`}
+          >
+            <span>{t.icon}</span>
+            <span>{t.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Overview Tab */}
+      {activeTab === 'overview' && (
+        <div className="grid gap-8 lg:grid-cols-3">
+          <div className="lg:col-span-2 space-y-8">
+            {/* About */}
+            <section>
+              <h2 className="font-display text-2xl font-bold text-amber mb-4">About This Course</h2>
+              <p className="text-bone leading-relaxed text-lg">{course.summary}</p>
+            </section>
+
+            {/* Outcomes */}
+            <section>
+              <h2 className="font-display text-2xl font-bold text-amber mb-4">What You'll Achieve</h2>
+              <div className="space-y-3">
+                {course.outcomes.map((outcome: string, i: number) => (
+                  <div key={i} className="flex gap-3 rounded-lg border border-bone/5 bg-coal p-4">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-mint/20 text-mint text-xs font-bold">
+                      ✓
+                    </span>
+                    <p className="text-bone">{outcome}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {/* Skills */}
+            <section>
+              <h2 className="font-display text-2xl font-bold text-amber mb-4">Skills You'll Master</h2>
+              <div className="flex flex-wrap gap-2">
+                {course.skills.map((skill: string, i: number) => (
+                  <span key={i} className="rounded-md border border-bone/10 bg-coal px-4 py-2 text-sm font-bold text-bone">
+                    {skill}
+                  </span>
+                ))}
+              </div>
+            </section>
+
+            {/* Telegram Channel */}
+            <section>
+              <h2 className="font-display text-2xl font-bold text-amber mb-4">Private Telegram Channel</h2>
+              <div className="rounded-lg border border-tgsky/20 bg-tgsky/5 p-6">
+                <div className="flex items-start gap-4">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-tgsky/20">
+                    <IconPlane className="h-6 w-6 text-tgsky" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-display text-lg font-bold text-bone mb-1">Daily Lesson Delivery</p>
+                    <p className="text-sm text-smoke mb-3">
+                      All course materials — videos, PDFs, assignments, and announcements — are delivered directly to your private Telegram channel.
                     </p>
-                  </div>
-                  <button onClick={handleEnroll} className="stripe-btn rounded-md bg-amber px-6 py-3.5 font-display text-sm font-extrabold uppercase tracking-[0.08em] text-ink transition-transform hover:-translate-y-0.5">
-                    Enrol · {fmtNaira(course.price)}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {enrolled && (
-              <div className="flex flex-wrap items-center gap-6 rounded-lg border border-bone/12 bg-coal p-6">
-                <Ring value={progress} size={84} stroke={8} color={course.hue} track="rgba(23,16,7,0.5)">
-                  <span className="font-mono text-sm font-extrabold text-bone">{Math.round(progress * 100)}%</span>
-                </Ring>
-                <div className="min-w-[180px] flex-1">
-                  <p className="font-display text-lg font-extrabold text-bone">Your progress, {user?.name.split(" ")[0]}</p>
-                  <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-smoke">
-                    {completed.length}/{lessons.length} lessons · quiz {enr?.quizPassed ? "passed ✓" : "pending"}
-                  </p>
-                  <a
-                    href={`https://${course.channel}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-3 inline-flex items-center gap-2 rounded border border-tgsky/40 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-tgsky transition-colors hover:bg-tgsky/10"
-                  >
-                    <IconPlane className="h-3.5 w-3.5" /> {course.channel}
-                  </a>
-                </div>
-              </div>
-            )}
-
-            {/* viewer body */}
-            {view.kind === "quiz" ? (
-              <div className="rounded-lg border border-bone/12 bg-ink p-6 sm:p-7">
-                <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-amber">Final gate</p>
-                <h2 className="mt-2 font-display text-3xl font-extrabold text-bone">Prove it. Politely.</h2>
-                <p className="mt-3 text-sm leading-relaxed text-smoke">
-                  Four-ish questions drawn from the whole course. Score 70% or better and the certificate comes within reach.
-                </p>
-                <div className="mt-6">
-                  <QuizRunner course={course} />
-                </div>
-              </div>
-            ) : selectedLesson ? (
-              <div className="overflow-hidden rounded-lg border border-bone/12 bg-ink">
-                <div className="border-b border-bone/10 bg-coal px-6 py-5">
-                  <p className="font-mono text-[10px] uppercase tracking-[0.22em]" style={{ color: course.hue }}>
-                    Lesson {String(selIdx + 1).padStart(2, "0")} · {selectedLesson.minutes} min · msg #{selectedLesson.msg}
-                  </p>
-                  <h2 className="mt-2 font-display text-2xl font-extrabold text-bone sm:text-3xl">{selectedLesson.title}</h2>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {selectedLesson.tags.map((t) => (
-                      <span key={t} className="rounded-full border border-bone/12 px-3 py-1 font-mono text-[9.5px] uppercase tracking-[0.14em] text-smoke">{t}</span>
-                    ))}
+                    <p className="font-mono text-sm text-tgsky">{course.channel}</p>
                   </div>
                 </div>
+              </div>
+            </section>
+          </div>
 
-                {!selUnlocked ? (
-                  <div className="flex flex-col items-center gap-4 px-6 py-16 text-center">
-                    <IconLock className="h-8 w-8 text-smoke" />
-                    <p className="font-display text-xl font-extrabold text-bone">This part of the trail is locked</p>
-                    <p className="max-w-sm text-sm text-smoke">{enrolled ? "Complete the previous lesson to keep moving." : "Enrol to unlock every lesson — the first one is free to preview."}</p>
-                  </div>
-                ) : (
-                  <div className="space-y-6 p-6">
-                    <div>
-                      <h3 className="font-mono text-[10px] uppercase tracking-[0.22em] text-smoke">You'll nail down</h3>
-                      <ul className="mt-3 space-y-2.5">
-                        {selectedLesson.bullets.map((b) => (
-                          <li key={b} className="flex gap-3 text-sm leading-relaxed text-bone/90">
-                            <IconCheck className="mt-0.5 h-4 w-4 shrink-0" style={{ color: course.hue }} />
-                            {b}
-                          </li>
-                        ))}
-                      </ul>
+          {/* Sidebar */}
+          <aside className="space-y-6">
+            {/* Course Info Card */}
+            <div className="sticky top-24 rounded-2xl border border-bone/10 bg-coal p-6">
+              <div className="mb-6 flex items-center gap-3">
+                <div className="flex h-14 w-14 items-center justify-center rounded-xl text-ink" style={{ backgroundColor: course.hue }}>
+                  <IconClaw className="h-8 w-8" />
+                </div>
+                <div>
+                  <p className="font-mono text-xs uppercase tracking-widest text-smoke">Course</p>
+                  <p className="font-display text-xl font-bold text-bone">{course.code}</p>
+                </div>
+              </div>
+
+              <dl className="space-y-3 text-sm">
+                <div className="flex justify-between border-b border-bone/5 pb-2">
+                  <dt className="text-smoke">Level</dt>
+                  <dd className="font-bold text-bone">{course.level}</dd>
+                </div>
+                <div className="flex justify-between border-b border-bone/5 pb-2">
+                  <dt className="text-smoke">Duration</dt>
+                  <dd className="font-bold text-bone">{course.weeks} weeks</dd>
+                </div>
+                <div className="flex justify-between border-b border-bone/5 pb-2">
+                  <dt className="text-smoke">Lessons</dt>
+                  <dd className="font-bold text-bone">{stats.totalLessons}</dd>
+                </div>
+                <div className="flex justify-between border-b border-bone/5 pb-2">
+                  <dt className="text-smoke">Total Time</dt>
+                  <dd className="font-bold text-bone">{Math.round(stats.totalMinutes / 60)} hours</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-smoke">Price</dt>
+                  <dd className="font-display text-xl font-bold" style={{ color: course.hue }}>₦{course.price?.toLocaleString()}</dd>
+                </div>
+              </dl>
+
+              {!enrolled ? (
+                <button
+                  onClick={() => setEnrollConfirm(true)}
+                  className="mt-6 w-full stripe-btn rounded-md py-3 font-display text-sm font-extrabold uppercase tracking-widest text-ink"
+                  style={{ backgroundColor: course.hue }}
+                >
+                  Enroll Now
+                </button>
+              ) : (
+                <div className="mt-6 rounded-lg border border-mint/30 bg-mint/5 p-4 text-center">
+                  <p className="text-xs font-mono uppercase tracking-widest text-mint mb-1">✓ Enrolled</p>
+                  <p className="text-sm text-bone">Keep learning at your pace</p>
+                </div>
+              )}
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {/* Curriculum Tab */}
+      {activeTab === 'curriculum' && (
+        <div className="space-y-4">
+          {!enrolled && (
+            <div className="rounded-lg border border-amber/30 bg-amber/5 p-4 mb-6">
+              <p className="text-sm text-bone">
+                <span className="font-bold text-amber">Preview Mode:</span> Enroll to track your progress and mark lessons complete.
+              </p>
+            </div>
+          )}
+
+          {course.modules.map((module: any, moduleIndex: number) => {
+            const moduleLessons = module.lessons || [];
+            const moduleCompleted = moduleLessons.filter((l: any) => completedLessons.includes(l.id)).length;
+            const moduleProgress = moduleLessons.length > 0 ? Math.round((moduleCompleted / moduleLessons.length) * 100) : 0;
+            const isExpanded = expandedModule === moduleIndex;
+
+            return (
+              <div key={module.id} className="rounded-xl border border-bone/10 bg-coal overflow-hidden">
+                {/* Module Header */}
+                <button
+                  onClick={() => setExpandedModule(isExpanded ? null : moduleIndex)}
+                  className="w-full flex items-center justify-between gap-4 p-5 hover:bg-ink/50 transition-colors text-left"
+                >
+                  <div className="flex items-center gap-4 flex-1">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg font-display text-sm font-bold" style={{ backgroundColor: course.hue + '30', color: course.hue }}>
+                      {String(moduleIndex + 1).padStart(2, '0')}
                     </div>
-
-                    {selectedLesson.tags.includes("Video") && <FakePlayer lesson={selectedLesson} hue={course.hue} />}
-
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      {selectedLesson.tags.includes("PDF") && (
-                        <div className="card-lift flex items-center gap-4 rounded-md border border-bone/12 bg-coal p-4">
-                          <IconDoc className="h-8 w-8 text-ember" />
-                          <div>
-                            <p className="text-sm font-bold text-bone">Lesson notes — PDF</p>
-                            <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-smoke">{2 + (selectedLesson.msg % 5)}.{(selectedLesson.msg * 3) % 10} MB · in channel files</p>
-                          </div>
-                        </div>
-                      )}
-                      {selectedLesson.tags.includes("Assignment") && (
-                        <div className="card-lift flex items-center gap-4 rounded-md border border-bone/12 bg-coal p-4">
-                          <IconClipboard className="h-8 w-8 text-mint" />
-                          <div>
-                            <p className="text-sm font-bold text-bone">Graded assignment</p>
-                            <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-smoke">submit via bot · /submit {selectedLesson.id}</p>
-                          </div>
-                        </div>
-                      )}
-                      {selectedLesson.tags.includes("Code") && (
-                        <div className="card-lift flex items-center gap-4 rounded-md border border-bone/12 bg-coal p-4">
-                          <IconTerminal className="h-8 w-8 text-tgsky" />
-                          <div>
-                            <p className="text-sm font-bold text-bone">Starter code</p>
-                            <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-smoke">git clone lair/{selectedLesson.id}</p>
-                          </div>
-                        </div>
-                      )}
-                      {selectedLesson.tags.includes("Reading") && (
-                        <div className="card-lift flex items-center gap-4 rounded-md border border-bone/12 bg-coal p-4">
-                          <IconDoc className="h-8 w-8 text-amber" />
-                          <div>
-                            <p className="text-sm font-bold text-bone">Required reading</p>
-                            <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-smoke">pinned post · msg #{selectedLesson.msg + 1}</p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-3 rounded-md border border-tgsky/25 bg-tgsky/[0.07] px-4 py-3">
-                      <IconMegaphone className="h-5 w-5 shrink-0 text-tgsky" />
-                      <p className="text-xs leading-relaxed text-smoke">
-                        Delivered in <span className="font-mono text-tgsky">{course.channel}</span> as message{" "}
-                        <span className="font-mono text-bone">#{selectedLesson.msg}</span> — the website tracks it, Telegram carries it.
+                    <div className="flex-1">
+                      <p className="font-display text-lg font-bold text-bone">{module.title}</p>
+                      <p className="text-xs text-smoke mt-1">
+                        {moduleLessons.length} lessons • {moduleLessons.reduce((s: number, l: any) => s + (l.minutes || 0), 0)} min
+                        {enrolled && <span className="ml-2 text-mint">• {moduleCompleted}/{moduleLessons.length} complete</span>}
                       </p>
                     </div>
-
+                  </div>
+                  <div className="flex items-center gap-3">
                     {enrolled && (
-                      selCompleted ? (
-                        <div className="flex items-center justify-center gap-3 rounded-md border border-mint/40 bg-mint/10 py-3.5">
-                          <IconCheck className="h-5 w-5 text-mint" />
-                          <p className="font-display text-sm font-extrabold uppercase tracking-[0.1em] text-mint">Lesson complete</p>
+                      <div className="hidden sm:block w-24">
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-bone/10">
+                          <div className="h-full rounded-full transition-all" style={{ width: moduleProgress + '%', backgroundColor: course.hue }} />
                         </div>
-                      ) : (
-                        <button
-                          onClick={() => handleComplete(selectedLesson)}
-                          className="stripe-btn w-full rounded-md py-4 font-display text-sm font-extrabold uppercase tracking-[0.08em] text-ink transition-transform hover:-translate-y-0.5"
-                          style={{ background: course.hue }}
-                        >
-                          Mark lesson complete
-                        </button>
-                      )
+                      </div>
                     )}
+                    <span className={`text-bone transition-transform ${isExpanded ? 'rotate-180' : ''}`}>▼</span>
+                  </div>
+                </button>
+
+                {/* Module Lessons */}
+                {isExpanded && (
+                  <div className="border-t border-bone/10 bg-ink/30 p-4 space-y-2">
+                    {moduleLessons.map((lesson: any, lessonIndex: number) => {
+                      const isCompleted = completedLessons.includes(lesson.id);
+                      return (
+                        <div key={lesson.id} className="rounded-lg border border-bone/5 bg-coal p-4 hover:border-bone/20 transition-colors">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex gap-3 flex-1">
+                              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                                isCompleted ? 'bg-mint/20 text-mint' : 'bg-bone/5 text-smoke'
+                              }`}>
+                                {isCompleted ? '✓' : lessonIndex + 1}
+                              </div>
+                              <div className="flex-1">
+                                <p className={`font-bold ${isCompleted ? 'text-mint' : 'text-bone'}`}>{lesson.title}</p>
+                                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-smoke">
+                                  <span>{lesson.minutes} min</span>
+                                  {lesson.tags?.map((tag: string, i: number) => (
+                                    <span key={i} className="rounded bg-bone/5 px-2 py-0.5">{tag}</span>
+                                  ))}
+                                </div>
+                                {lesson.bullets && lesson.bullets.length > 0 && (
+                                  <ul className="mt-3 space-y-1">
+                                    {lesson.bullets.map((bullet: string, i: number) => (
+                                      <li key={i} className="text-sm text-bone/80 flex gap-2">
+                                        <span className="text-smoke">•</span>
+                                        <span>{bullet}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+
+                                {/* Resources */}
+                                {(lessonResources[lesson.id] || []).map((resource: any) => (
+                                  <ResourcePlayer key={resource.id} resource={resource} />
+                                ))}
+                              </div>
+                            </div>
+                            {enrolled && !isCompleted && (
+                              <button
+                                onClick={() => handleCompleteLesson(lesson.id, lesson.title)}
+                                className="shrink-0 rounded-md px-4 py-2 text-xs font-bold uppercase tracking-wider text-ink transition-colors hover:opacity-90"
+                                style={{ backgroundColor: course.hue }}
+                              >
+                                Complete
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
-            ) : null}
-
-            {enrolled && <CertificateCard course={course} />}
-
-            {/* outcomes */}
-            <div className="rounded-lg border border-bone/12 bg-coal p-6">
-              <h3 className="font-display text-lg font-extrabold text-bone">By the last week you'll have</h3>
-              <ul className="mt-4 grid gap-x-8 gap-y-3 sm:grid-cols-2">
-                {course.outcomes.map((o) => (
-                  <li key={o} className="flex gap-3 text-sm leading-relaxed text-smoke">
-                    <IconArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-amber" />
-                    {o}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
+            );
+          })}
         </div>
-      </div>
+      )}
+
+      {/* Quiz Tab */}
+      {activeTab === 'quiz' && (
+        <div className="max-w-3xl mx-auto">
+          {!enrolled ? (
+            <div className="rounded-2xl border border-bone/10 bg-coal p-12 text-center">
+              <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-amber/10">
+                <span className="text-4xl">🎯</span>
+              </div>
+              <h2 className="font-display text-2xl font-bold text-bone mb-3">Gate Quiz Locked</h2>
+              <p className="text-smoke mb-6">You must enroll in this course to access the gate quiz.</p>
+              <button
+                onClick={() => setEnrollConfirm(true)}
+                className="stripe-btn rounded-md px-8 py-3 font-display text-sm font-extrabold uppercase tracking-widest text-ink"
+                style={{ backgroundColor: course.hue }}
+              >
+                Enroll to Unlock
+              </button>
+            </div>
+          ) : !course.quiz || course.quiz.length === 0 ? (
+            <div className="rounded-2xl border border-bone/10 bg-coal p-12 text-center">
+              <p className="text-smoke">No quiz questions available for this course yet.</p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Quiz Header */}
+              <div className="rounded-2xl border border-bone/10 bg-coal p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h2 className="font-display text-2xl font-bold text-amber">Gate Quiz</h2>
+                    <p className="text-sm text-smoke mt-1">
+                      {course.quiz.length} questions • 70% required to pass
+                    </p>
+                  </div>
+                  {quizSubmitted && quizScore && (
+                    <div className={`rounded-lg px-4 py-2 ${quizScore.passed ? 'bg-mint/10 border border-mint/30' : 'bg-alert/10 border border-alert/30'}`}>
+                      <p className={`font-display text-lg font-bold ${quizScore.passed ? 'text-mint' : 'text-alert'}`}>
+                        {quizScore.score}/{quizScore.total}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Progress */}
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-2 overflow-hidden rounded-full bg-bone/10">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: (Object.keys(quizAnswers).length / course.quiz.length) * 100 + '%',
+                        backgroundColor: course.hue
+                      }}
+                    />
+                  </div>
+                  <span className="text-xs font-mono text-smoke">
+                    {Object.keys(quizAnswers).length}/{course.quiz.length}
+                  </span>
+                </div>
+              </div>
+
+              {/* Questions */}
+              <div className="space-y-4">
+                {course.quiz.map((q: any, i: number) => {
+                  const userAnswer = quizAnswers[i];
+                  const isCorrect = userAnswer === q.answer;
+                  const showFeedback = quizSubmitted && showReview;
+
+                  return (
+                    <div key={i} className={`rounded-xl border p-6 ${
+                      showFeedback
+                        ? isCorrect ? 'border-mint/30 bg-mint/5' : 'border-alert/30 bg-alert/5'
+                        : 'border-bone/10 bg-coal'
+                    }`}>
+                      <div className="flex items-start gap-3 mb-4">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg font-display text-sm font-bold" style={{ backgroundColor: course.hue + '30', color: course.hue }}>
+                          Q{i + 1}
+                        </span>
+                        <p className="font-bold text-bone text-lg flex-1">{q.question}</p>
+                      </div>
+
+                      <div className="space-y-2 ml-11">
+                        {q.options.map((option: string, j: number) => {
+                          const isSelected = userAnswer === j;
+                          const isCorrectOption = q.answer === j;
+
+                          let borderClass = 'border-bone/10 hover:border-bone/30';
+                          let bgClass = '';
+                          if (isSelected && !quizSubmitted) {
+                            borderClass = 'border-amber';
+                            bgClass = 'bg-amber/10';
+                          }
+                          if (showFeedback) {
+                            if (isCorrectOption) {
+                              borderClass = 'border-mint';
+                              bgClass = 'bg-mint/10';
+                            } else if (isSelected && !isCorrectOption) {
+                              borderClass = 'border-alert';
+                              bgClass = 'bg-alert/10';
+                            }
+                          }
+
+                          return (
+                            <label
+                              key={j}
+                              className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${borderClass} ${bgClass}`}
+                            >
+                              <input
+                                type="radio"
+                                name={`question-${i}`}
+                                checked={isSelected}
+                                onChange={() => handleQuizAnswer(i, j)}
+                                disabled={quizSubmitted}
+                                className="h-4 w-4 accent-amber"
+                              />
+                              <span className="flex-1 text-bone">{option}</span>
+                              {showFeedback && isCorrectOption && <span className="text-mint font-bold">✓</span>}
+                              {showFeedback && isSelected && !isCorrectOption && <span className="text-alert font-bold">✗</span>}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Submit / Results */}
+              {!quizSubmitted ? (
+                <button
+                  onClick={handleSubmitQuiz}
+                  disabled={Object.keys(quizAnswers).length < course.quiz.length}
+                  className="w-full stripe-btn rounded-xl py-4 font-display text-sm font-extrabold uppercase tracking-widest text-ink disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ backgroundColor: course.hue }}
+                >
+                  Submit Quiz ({Object.keys(quizAnswers).length}/{course.quiz.length} answered)
+                </button>
+              ) : (
+                <div className={`rounded-2xl border-2 p-8 text-center ${
+                  quizScore?.passed ? 'border-mint bg-mint/5' : 'border-alert bg-alert/5'
+                }`}>
+                  <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full" style={{ backgroundColor: (quizScore?.passed ? '#57d9a3' : '#ff5d5d') + '20' }}>
+                    <span className="text-4xl">{quizScore?.passed ? '🎉' : '📚'}</span>
+                  </div>
+                  <h3 className={`font-display text-3xl font-bold mb-2 ${quizScore?.passed ? 'text-mint' : 'text-alert'}`}>
+                    {quizScore?.passed ? 'Quiz Passed!' : 'Not Quite There'}
+                  </h3>
+                  <p className="text-bone text-lg mb-2">
+                    You scored <span className="font-bold">{quizScore?.score}</span> out of <span className="font-bold">{quizScore?.total}</span>
+                  </p>
+                  <p className="text-smoke text-sm mb-6">
+                    ({Math.round((quizScore!.score / quizScore!.total) * 100)}% • 70% required)
+                  </p>
+
+                  <div className="flex flex-wrap gap-3 justify-center">
+                    {!quizScore?.passed && (
+                      <button
+                        onClick={() => {
+                          setQuizSubmitted(false);
+                          setQuizAnswers({});
+                          setQuizScore(null);
+                          setShowReview(false);
+                        }}
+                        className="rounded-md px-6 py-3 font-display text-sm font-extrabold uppercase tracking-widest text-ink"
+                        style={{ backgroundColor: course.hue }}
+                      >
+                        Try Again
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setShowReview(!showReview)}
+                      className="rounded-md border border-bone/20 px-6 py-3 font-display text-sm font-bold uppercase tracking-widest text-bone hover:bg-bone/5"
+                    >
+                      {showReview ? 'Hide' : 'Review'} Answers
+                    </button>
+                    {quizScore?.passed && (
+                      <button
+                        onClick={() => setActiveTab('certificate')}
+                        className="rounded-md bg-mint px-6 py-3 font-display text-sm font-extrabold uppercase tracking-widest text-ink"
+                      >
+                        View Certificate →
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Certificate Tab */}
+      {activeTab === 'certificate' && (
+        <div className="max-w-3xl mx-auto">
+          {!enrolled ? (
+            <div className="rounded-2xl border border-bone/10 bg-coal p-12 text-center">
+              <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-amber/10">
+                <span className="text-4xl">🏆</span>
+              </div>
+              <h2 className="font-display text-2xl font-bold text-bone mb-3">Certificate Locked</h2>
+              <p className="text-smoke">Enroll in this course to earn your certificate.</p>
+            </div>
+          ) : !courseComplete ? (
+            <div className="rounded-2xl border border-bone/10 bg-coal p-12 text-center">
+              <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-amber/10">
+                <span className="text-4xl">🔒</span>
+              </div>
+              <h2 className="font-display text-2xl font-bold text-bone mb-3">Certificate Not Yet Earned</h2>
+              <p className="text-smoke mb-6">Complete all lessons and pass the gate quiz to unlock your certificate.</p>
+              <div className="space-y-2 text-left max-w-sm mx-auto">
+                <div className="flex items-center gap-3">
+                  <span className={progress === 100 ? 'text-mint' : 'text-smoke'}>{progress === 100 ? '✓' : '○'}</span>
+                  <span className="text-bone">Complete all {stats.totalLessons} lessons</span>
+                  <span className="ml-auto text-xs text-smoke">{completedLessons.length}/{stats.totalLessons}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className={quizScore?.passed ? 'text-mint' : 'text-smoke'}>{quizScore?.passed ? '✓' : '○'}</span>
+                  <span className="text-bone">Pass the gate quiz (70%+)</span>
+                  <span className="ml-auto text-xs text-smoke">
+                    {quizScore ? quizScore.score + '/' + quizScore.total : 'Not attempted'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Certificate Preview */}
+              <div className="relative overflow-hidden rounded-2xl border-4 p-12 text-center" style={{ borderColor: course.hue, background: 'linear-gradient(135deg, #1a120a 0%, #211709 100%)' }}>
+                <div className="absolute inset-0 grid-lines opacity-20" />
+                <div className="relative">
+                  <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full" style={{ backgroundColor: course.hue }}>
+                    <IconClaw className="h-12 w-12 text-ink" />
+                  </div>
+                  <p className="font-mono text-xs uppercase tracking-[0.3em] text-smoke mb-2">Certificate of Completion</p>
+                  <h2 className="font-display text-4xl font-extrabold text-bone mb-4">Tiger's Lair Academy</h2>
+                  <div className="my-8">
+                    <p className="text-sm text-smoke mb-2">This certifies that</p>
+                    <p className="font-display text-3xl font-bold mb-2" style={{ color: course.hue }}>{user?.name}</p>
+                    <p className="text-sm text-smoke mb-6">has successfully completed</p>
+                    <p className="font-display text-2xl font-bold text-bone mb-2">{course.title}</p>
+                    <p className="font-mono text-sm text-smoke">{course.code} • {course.weeks} weeks • {stats.totalLessons} lessons</p>
+                  </div>
+                  <div className="mt-8 pt-6 border-t border-bone/10">
+                    <p className="font-mono text-xs text-smoke mb-1">Certificate ID</p>
+                    <p className="font-mono text-sm font-bold text-amber">{certificateId}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Download / Share */}
+              <div className="flex flex-wrap gap-3 justify-center">
+                <button
+                  onClick={() => toast("Certificate download coming soon")}
+                  className="stripe-btn rounded-md px-6 py-3 font-display text-sm font-extrabold uppercase tracking-widest text-ink"
+                  style={{ backgroundColor: course.hue }}
+                >
+                  Download PDF
+                </button>
+                <button
+                  onClick={() => toast("Share link copied")}
+                  className="rounded-md border border-bone/20 px-6 py-3 font-display text-sm font-bold uppercase tracking-widest text-bone hover:bg-bone/5"
+                >
+                  Share Achievement
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

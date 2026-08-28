@@ -1,0 +1,9 @@
+name = "tigerslair-api"
+main = "worker/src/index.js"
+compatibility_date = "2026-08-26"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "tigerslair-db"
+database_id = "0ab76b65-3e86-41aa-90f5-9196dae9772d"

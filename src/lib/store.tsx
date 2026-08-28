@@ -1,51 +1,42 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { COURSES, courseLessons, getCourse } from "../data/courses";
+import { api, clearToken } from "./api";
 
 /* ---------------- types ---------------- */
-
 export interface User {
   id: string;
   name: string;
   email: string;
-  telegramId: string | null;
-  joinedAt: number;
+  telegram_id: string | null;
+  role: string;
+  joined_at: number;
 }
 
 export interface Enrollment {
-  courseId: string;
-  enrolledAt: number;
-  completed: string[];
-  quizScore: number | null;
-  quizTotal: number | null;
-  quizPassed: boolean;
-}
-
-export interface Prefs {
-  telegram: boolean;
-  whatsapp: boolean;
-  email: boolean;
+  course_id: string;
+  enrolled_at: number;
+  quiz_passed: number;
 }
 
 export interface Activity {
   id: string;
   at: number;
   text: string;
-  kind: "enroll" | "lesson" | "quiz" | "cert" | "telegram" | "system";
-}
-
-interface AppState {
-  user: User | null;
-  enrollments: Enrollment[];
-  prefs: Prefs;
-  activity: Activity[];
+  kind: string;
 }
 
 export type Route =
   | { view: "home" }
   | { view: "courses" }
   | { view: "course"; courseId: string }
-  | { view: "dashboard" };
+  | { view: "course-editor"; courseId: string }
+  | { view: "dashboard" }
+  | { view: "mentorshop" }
+  | { view: "mentorship-apply" }
+  | { view: "mentorship-dashboard" }
+  | { view: "counseling" }
+  | { view: "meetups" }
+  | { view: "admin" };
 
 export interface Toast {
   id: string;
@@ -53,124 +44,66 @@ export interface Toast {
 }
 
 interface StoreCtx {
-  state: AppState;
   user: User | null;
   route: Route;
   go: (r: Route) => void;
   authOpen: boolean;
   setAuthOpen: (v: boolean) => void;
-  tgOpen: boolean;
-  setTgOpen: (v: boolean) => void;
   toasts: Toast[];
   toast: (text: string) => void;
-  register: (name: string, email: string) => void;
-  login: (name: string, email: string) => void;
-  loginDemo: () => void;
+  register: (name: string, email: string) => Promise<void>;
+  login: (email: string) => Promise<void>;
+  loginDemo: () => Promise<void>;
   logout: () => void;
-  enroll: (courseId: string) => void;
+  enroll: (courseId: string) => Promise<void>;
   isEnrolled: (courseId: string) => boolean;
-  enrollmentFor: (courseId: string) => Enrollment | undefined;
-  completeLesson: (courseId: string, lessonId: string) => void;
-  submitQuiz: (courseId: string, score: number, total: number) => boolean;
-  progressOf: (courseId: string) => number;
-  linkTelegram: () => string;
-  unlinkTelegram: () => void;
-  setPref: (k: keyof Prefs, v: boolean) => void;
-  certificateId: (courseId: string) => string | null;
+  completeLesson: (courseId: string, lessonId: string) => Promise<void>;
+  submitQuiz: (courseId: string, score: number, total: number) => Promise<boolean>;
+  linkTelegram: () => Promise<void>;
+  unlinkTelegram: () => Promise<void>;
 }
-
-/* ---------------- helpers ---------------- */
-
-const uid = () => Math.random().toString(36).slice(2, 10);
-const LS_KEY = "tigerslair.state.v1";
-
-const defaultState: AppState = {
-  user: null,
-  enrollments: [],
-  prefs: { telegram: true, whatsapp: true, email: false },
-  activity: [],
-};
-
-function loadState(): AppState {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return defaultState;
-    const parsed = JSON.parse(raw) as AppState;
-    return { ...defaultState, ...parsed, prefs: { ...defaultState.prefs, ...parsed.prefs } };
-  } catch {
-    return defaultState;
-  }
-}
-
-function seedDemo(): AppState {
-  const now = Date.now();
-  const day = 86400000;
-  const py = getCourse("py101")!;
-  const ba = getCourse("ba202")!;
-  const pyLessons = courseLessons(py);
-  return {
-    user: {
-      id: "st_demo214",
-      name: "Ada Eze",
-      email: "ada@example.com",
-      telegramId: "784512390",
-      joinedAt: now - 19 * day,
-    },
-    enrollments: [
-      {
-        courseId: "py101",
-        enrolledAt: now - 18 * day,
-        completed: pyLessons.slice(0, 5).map((l) => l.id),
-        quizScore: null,
-        quizTotal: null,
-        quizPassed: false,
-      },
-      {
-        courseId: "ba202",
-        enrolledAt: now - 6 * day,
-        completed: courseLessons(ba).slice(0, 2).map((l) => l.id),
-        quizScore: null,
-        quizTotal: null,
-        quizPassed: false,
-      },
-    ],
-    prefs: { telegram: true, whatsapp: true, email: false },
-    activity: [
-      { id: uid(), at: now - 2 * day, text: "Completed lesson “Files, CSVs & encodings” in PY101", kind: "lesson" },
-      { id: uid(), at: now - 4 * day, text: "Bot delivered Week 3 materials to @ada_eze", kind: "telegram" },
-      { id: uid(), at: now - 6 * day, text: "Enrolled in BA202 — Business Analysis Essentials", kind: "enroll" },
-      { id: uid(), at: now - 18 * day, text: "Enrolled in PY101 — Python for Data Analysis", kind: "enroll" },
-      { id: uid(), at: now - 19 * day, text: "Telegram account linked to the Lair", kind: "telegram" },
-    ],
-  };
-}
-
-/* ---------------- context ---------------- */
 
 const Ctx = createContext<StoreCtx | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AppState>(loadState);
+  const [user, setUser] = useState<User | null>(null);
+  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [route, setRoute] = useState<Route>({ view: "home" });
   const [authOpen, setAuthOpen] = useState(false);
-  const [tgOpen, setTgOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const timers = useRef<number[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(LS_KEY, JSON.stringify(state));
-    } catch {
-      /* storage unavailable — session-only mode */
+    const token = localStorage.getItem("tigerslair.token");
+    if (token) {
+      api
+        .getMe()
+        .then((res) => {
+          setUser(res.data);
+          fetchEnrollments();
+        })
+        .catch(() => {
+          clearToken();
+        })
+        .finally(() => setIsLoading(false));
+    } else {
+      setIsLoading(false);
     }
-  }, [state]);
+  }, []);
 
-  useEffect(() => () => timers.current.forEach(clearTimeout), []);
+  const fetchEnrollments = async () => {
+    try {
+      const res = await api.getEnrollments();
+      setEnrollments(res.data);
+    } catch (e) {
+      /* ignore */
+    }
+  };
 
   const toast = useCallback((text: string) => {
-    const id = uid();
+    const id = Math.random().toString(36).slice(2, 10);
     setToasts((t) => [...t.slice(-2), { id, text }]);
-    timers.current.push(window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200));
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200);
   }, []);
 
   const go = useCallback((r: Route) => {
@@ -178,182 +111,135 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     window.scrollTo(0, 0);
   }, []);
 
-  const log = useCallback((text: string, kind: Activity["kind"]) => {
-    setState((s) => ({
-      ...s,
-      activity: [{ id: uid(), at: Date.now(), text, kind }, ...s.activity].slice(0, 40),
-    }));
-  }, []);
-
-  /* ----- auth ----- */
-
   const register = useCallback(
-    (name: string, email: string) => {
-      setState((s) => ({
-        ...s,
-        user: { id: "st_" + uid(), name, email, telegramId: null, joinedAt: Date.now() },
-      }));
-      toast(`Welcome to the Lair, ${name.split(" ")[0]}`);
-      log("Account created on the academy site", "system");
-    },
-    [toast, log]
-  );
-
-  const login = useCallback(
-    (name: string, email: string) => {
-      setState((s) => ({
-        ...s,
-        user: s.user ?? { id: "st_" + uid(), name, email, telegramId: null, joinedAt: Date.now() },
-      }));
-      toast(`Signed in as ${name.split(" ")[0]}`);
+    async (name: string, email: string) => {
+      try {
+        const res = await api.register(name, email);
+        setUser(res.data);
+        toast("Welcome to the Lair, " + name.split(" ")[0]);
+        setAuthOpen(false);
+      } catch (e: any) {
+        toast(e.message || "Registration failed");
+      }
     },
     [toast]
   );
 
-  const loginDemo = useCallback(() => {
-    setState(seedDemo());
-    toast("Demo student loaded — meet Ada");
+  const login = useCallback(
+    async (email: string) => {
+      try {
+        const res = await api.login(email);
+        setUser(res.data);
+        toast("Signed in as " + res.data.name.split(" ")[0]);
+        setAuthOpen(false);
+        fetchEnrollments();
+      } catch (e: any) {
+        toast(e.message || "Login failed");
+      }
+    },
+    [toast]
+  );
+
+  const loginDemo = useCallback(async () => {
+    try {
+      const res = await api.loginDemo();
+      setUser(res.data);
+      toast("Demo student loaded — meet Ada");
+      setAuthOpen(false);
+      fetchEnrollments();
+    } catch (e: any) {
+      toast("Failed to load demo");
+    }
   }, [toast]);
 
   const logout = useCallback(() => {
-    setState((s) => ({ ...s, user: null }));
+    clearToken();
+    setUser(null);
+    setEnrollments([]);
     toast("Signed out — progress stays safe in your browser");
-  }, [toast]);
-
-  /* ----- learning ----- */
+    go({ view: "home" });
+  }, [toast, go]);
 
   const enroll = useCallback(
-    (courseId: string) => {
-      const c = getCourse(courseId);
-      if (!c) return;
-      setState((s) => {
-        if (!s.user) return s;
-        if (s.enrollments.some((e) => e.courseId === courseId)) return s;
-        return {
-          ...s,
-          enrollments: [
-            ...s.enrollments,
-            { courseId, enrolledAt: Date.now(), completed: [], quizScore: null, quizTotal: null, quizPassed: false },
-          ],
-        };
-      });
-      toast(`Enrolled in ${c.code} — channel invite sent to the bot`);
-      log(`Enrolled in ${c.code} — ${c.title}`, "enroll");
+    async (courseId: string) => {
+      try {
+        await api.enroll(courseId);
+        toast("Enrolled successfully");
+        fetchEnrollments();
+      } catch (e: any) {
+        toast(e.message || "Enrollment failed");
+      }
     },
-    [toast, log]
-  );
-
-  const enrollmentFor = useCallback(
-    (courseId: string) => state.enrollments.find((e) => e.courseId === courseId),
-    [state.enrollments]
+    [toast]
   );
 
   const isEnrolled = useCallback(
-    (courseId: string) => state.enrollments.some((e) => e.courseId === courseId),
-    [state.enrollments]
-  );
-
-  const progressOf = useCallback(
     (courseId: string) => {
-      const e = state.enrollments.find((x) => x.courseId === courseId);
-      const c = getCourse(courseId);
-      if (!e || !c) return 0;
-      const total = courseLessons(c).length + 1;
-      const done = e.completed.length + (e.quizPassed ? 1 : 0);
-      return Math.min(1, done / total);
+      return enrollments.some((e) => e.course_id === courseId);
     },
-    [state.enrollments]
+    [enrollments]
   );
 
   const completeLesson = useCallback(
-    (courseId: string, lessonId: string) => {
-      const c = getCourse(courseId);
-      setState((s) => ({
-        ...s,
-        enrollments: s.enrollments.map((e) =>
-          e.courseId === courseId && !e.completed.includes(lessonId)
-            ? { ...e, completed: [...e.completed, lessonId] }
-            : e
-        ),
-      }));
-      if (c) {
-        const lesson = courseLessons(c).find((l) => l.id === lessonId);
-        if (lesson) {
-          toast(`“${lesson.title}” marked complete`);
-          log(`Completed lesson “${lesson.title}” in ${c.code}`, "lesson");
-        }
+    async (courseId: string, lessonId: string) => {
+      try {
+        await api.completeLesson(courseId, lessonId);
+        toast("Lesson marked complete");
+      } catch (e: any) {
+        toast(e.message || "Failed to complete lesson");
       }
     },
-    [toast, log]
+    [toast]
   );
 
   const submitQuiz = useCallback(
-    (courseId: string, score: number, total: number) => {
-      const passed = score / total >= 0.7;
-      const c = getCourse(courseId);
-      setState((s) => ({
-        ...s,
-        enrollments: s.enrollments.map((e) =>
-          e.courseId === courseId ? { ...e, quizScore: score, quizTotal: total, quizPassed: e.quizPassed || passed } : e
-        ),
-      }));
-      if (c) {
-        if (passed) {
-          toast(`Quiz passed — ${score}/${total}. One step from the certificate`);
-          log(`Passed the ${c.code} gate quiz (${score}/${total})`, "quiz");
+    async (courseId: string, score: number, total: number) => {
+      try {
+        const res = await api.submitQuiz(courseId, score, total);
+        if (res.passed) {
+          toast("Quiz passed — " + score + "/" + total + ". One step from the certificate");
         } else {
-          toast(`${score}/${total} — you need 70% to pass. Review and retry`);
-          log(`Retaking the ${c.code} gate quiz (scored ${score}/${total})`, "quiz");
+          toast(score + "/" + total + " — you need 70% to pass. Review and retry");
         }
+        return res.passed;
+      } catch (e: any) {
+        toast(e.message || "Failed to submit quiz");
+        return false;
       }
-      return passed;
     },
-    [toast, log]
+    [toast]
   );
 
-  /* ----- telegram & prefs ----- */
-
-  const linkTelegram = useCallback(() => {
-    const tgId = "78" + String(Math.floor(1000000 + Math.random() * 8999999));
-    setState((s) => (s.user ? { ...s, user: { ...s.user, telegramId: tgId } } : s));
-    toast("Telegram linked — the bot now knows you");
-    log("Telegram account linked via @TigersLairBot", "telegram");
-    return tgId;
-  }, [toast, log]);
-
-  const unlinkTelegram = useCallback(() => {
-    setState((s) => (s.user ? { ...s, user: { ...s.user, telegramId: null } } : s));
-    toast("Telegram unlinked");
-    log("Telegram account unlinked", "telegram");
-  }, [toast, log]);
-
-  const setPref = useCallback((k: keyof Prefs, v: boolean) => {
-    setState((s) => ({ ...s, prefs: { ...s.prefs, [k]: v } }));
-  }, []);
-
-  const certificateId = useCallback(
-    (courseId: string) => {
-      const e = state.enrollments.find((x) => x.courseId === courseId);
-      const c = getCourse(courseId);
-      if (!e || !c || !state.user) return null;
-      if (e.quizPassed && e.completed.length >= courseLessons(c).length) {
-        const serial = (state.user.id + courseId).split("").reduce((a, ch) => a + ch.charCodeAt(0), 0);
-        return `TL-${c.code}-${String(serial * 7).slice(-6)}`;
+  const linkTelegram = useCallback(async () => {
+    try {
+      const res = await api.linkTelegram();
+      toast("Telegram linked — the bot now knows you");
+      if (user) {
+        setUser({ ...user, telegram_id: res.telegramId });
       }
-      return null;
-    },
-    [state.enrollments, state.user]
-  );
+    } catch (e: any) {
+      toast(e.message || "Failed to link Telegram");
+    }
+  }, [toast, user]);
+
+  const unlinkTelegram = useCallback(async () => {
+    try {
+      await api.unlinkTelegram();
+      toast("Telegram unlinked");
+      if (user) {
+        setUser({ ...user, telegram_id: null });
+      }
+    } catch (e: any) {
+      toast(e.message || "Failed to unlink Telegram");
+    }
+  }, [toast, user]);
 
   const value: StoreCtx = {
-    state,
-    user: state.user,
+    user,
     route,
     go,
     authOpen,
     setAuthOpen,
-    tgOpen,
-    setTgOpen,
     toasts,
     toast,
     register,
@@ -362,14 +248,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     logout,
     enroll,
     isEnrolled,
-    enrollmentFor,
     completeLesson,
     submitQuiz,
-    progressOf,
     linkTelegram,
     unlinkTelegram,
-    setPref,
-    certificateId,
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
@@ -380,5 +262,3 @@ export function useStore(): StoreCtx {
   if (!ctx) throw new Error("useStore must be used inside StoreProvider");
   return ctx;
 }
-
-export { COURSES };

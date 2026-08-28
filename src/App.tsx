@@ -3,9 +3,16 @@ import { StoreProvider, useStore } from "./lib/store";
 import Home from "./views/Home";
 import Catalog from "./views/Catalog";
 import CourseDetail from "./views/CourseDetail";
+import CourseEditor from "./views/CourseEditor";
 import Dashboard from "./views/Dashboard";
-import { AuthModal, TelegramModal } from "./components/Modals";
-import { IconClaw, IconMenu, IconX, IconPlane } from "./components/Icons";
+import Mentorshop from "./views/Mentorshop";
+import MentorshipApply from "./views/MentorshipApply";
+import MentorshipDashboard from "./views/MentorshipDashboard";
+import CounselingBook from "./views/CounselingBook";
+import Meetups from "./views/Meetups";
+import AdminPanel from "./views/AdminPanel";
+import { AuthModal } from "./components/Modals";
+import { IconClaw, IconMenu, IconX } from "./components/Icons";
 
 function StatusStrip() {
   const [secs, setSecs] = useState(86414);
@@ -19,15 +26,9 @@ function StatusStrip() {
   return (
     <div className="border-b border-bone/10 bg-[#120c05]">
       <div className="mx-auto flex max-w-7xl items-center gap-5 overflow-hidden px-5 py-1.5 font-mono text-[9.5px] uppercase tracking-[0.16em] text-smoke sm:px-8">
-        <span className="shrink-0 text-amber">lair-edge v1.4</span>
+        <span className="shrink-0 text-amber">lair-edge v2.0</span>
         <span className="hidden items-center gap-1.5 sm:flex">
           <span className="blink-dot h-1.5 w-1.5 rounded-full bg-mint" /> fra1 · online
-        </span>
-        <span className="hidden items-center gap-1.5 md:flex">
-          <span className="blink-dot h-1.5 w-1.5 rounded-full bg-mint" style={{ animationDelay: "0.4s" }} /> D1 · 7 tables synced
-        </span>
-        <span className="hidden items-center gap-1.5 lg:flex">
-          <span className="blink-dot h-1.5 w-1.5 rounded-full bg-tgsky" style={{ animationDelay: "0.8s" }} /> @TigersLairBot · listening
         </span>
         <span className="ml-auto shrink-0 text-smoke/70">uptime {h}:{m}:{s}</span>
       </div>
@@ -42,8 +43,13 @@ function Nav() {
   const links = [
     { label: "Overview", active: route.view === "home", go: () => go({ view: "home" }) },
     { label: "Courses", active: route.view === "courses" || route.view === "course", go: () => go({ view: "courses" }) },
-    { label: "Dashboard", active: route.view === "dashboard", go: () => go({ view: "dashboard" }) },
+    { label: "Mentorshop", active: route.view === "mentorshop" || route.view === "mentorship-apply" || route.view === "mentorship-dashboard", go: () => go({ view: "mentorshop" }) },
+    { label: "Dashboard", active: route.view === "dashboard" || route.view === "mentorship-dashboard", go: () => go({ view: "dashboard" }) },
   ];
+
+  if (user?.role === 'admin') {
+    links.push({ label: "Admin", active: route.view === "admin" || route.view === "course-editor", go: () => go({ view: "admin" }) });
+  }
 
   const nav = (fn: () => void) => () => {
     fn();
@@ -124,9 +130,7 @@ function Nav() {
             <div className="mt-3 border-t border-bone/10 pt-3">
               {user ? (
                 <div className="flex items-center justify-between px-4">
-                  <span className="text-sm text-smoke">
-                    {user.name} · <span className="font-mono text-[10px]">{user.id}</span>
-                  </span>
+                  <span className="text-sm text-smoke">{user.name}</span>
                   <button onClick={() => { logout(); setOpen(false); }} className="font-mono text-[10px] uppercase tracking-[0.16em] text-alert">
                     exit
                   </button>
@@ -148,11 +152,7 @@ function Nav() {
 }
 
 function Footer() {
-  const { go, toast } = useStore();
-  const toBlueprint = () => {
-    go({ view: "home" });
-    window.setTimeout(() => document.getElementById("blueprint")?.scrollIntoView({ behavior: "smooth" }), 80);
-  };
+  const { go } = useStore();
   return (
     <footer className="border-t border-bone/10 bg-[#120c05]">
       <div className="mx-auto grid max-w-7xl gap-12 px-5 py-16 sm:px-8 lg:grid-cols-12">
@@ -164,26 +164,17 @@ function Footer() {
             <span className="font-display text-lg font-extrabold tracking-tight text-bone">TIGER'S LAIR</span>
           </div>
           <p className="mt-5 max-w-sm text-sm leading-relaxed text-smoke">
-            An academy built on the Cloudflare edge with Telegram as its delivery truck and a database it actually owns. Portfolio,
-            agro and the academy — one professional identity.
+            An academy and mentorship ecosystem built on the edge. Portfolio, agro, and the academy — one professional identity.
           </p>
-          <a
-            href="https://t.me/BotFather"
-            target="_blank"
-            rel="noreferrer"
-            className="mt-6 inline-flex items-center gap-2 rounded-md border border-tgsky/40 px-4 py-2.5 font-mono text-[10.5px] uppercase tracking-[0.16em] text-tgsky transition-colors hover:bg-tgsky/10"
-          >
-            <IconPlane className="h-4 w-4" /> @TigersLairBot
-          </a>
         </div>
         <div className="lg:col-span-3">
-          <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-amber">Academy</p>
+          <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-amber">Platform</p>
           <ul className="mt-4 space-y-2.5 text-sm">
             {[
               { l: "Overview", f: () => go({ view: "home" }) },
               { l: "Course catalogue", f: () => go({ view: "courses" }) },
-              { l: "Student dashboard", f: () => go({ view: "dashboard" }) },
-              { l: "The blueprint", f: toBlueprint },
+              { l: "Mentorshop", f: () => go({ view: "mentorshop" }) },
+              { l: "Community Meetups", f: () => go({ view: "meetups" }) },
             ].map((x) => (
               <li key={x.l}>
                 <button onClick={x.f} className="text-smoke transition-colors hover:text-amber">
@@ -193,35 +184,10 @@ function Footer() {
             ))}
           </ul>
         </div>
-        <div className="lg:col-span-4">
-          <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-amber">Ecosystem</p>
-          <ul className="mt-4 space-y-2.5 text-sm">
-            {[
-              { l: "Cloudflare Workers docs", href: "https://developers.cloudflare.com/workers/" },
-              { l: "Cloudflare D1 docs", href: "https://developers.cloudflare.com/d1/" },
-              { l: "Telegram Bot API", href: "https://core.telegram.org/bots/api" },
-              { l: "Telegram Mini Apps", href: "https://core.telegram.org/bots/webapps" },
-              { l: "Flutter", href: "https://flutter.dev" },
-            ].map((x) => (
-              <li key={x.l}>
-                <a
-                  href={x.href}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={() => toast("Opening the docs — the blueprint awaits")}
-                  className="text-smoke transition-colors hover:text-amber"
-                >
-                  {x.l} ↗
-                </a>
-              </li>
-            ))}
-          </ul>
-        </div>
       </div>
       <div className="border-t border-bone/10">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-5 py-5 font-mono text-[9.5px] uppercase tracking-[0.18em] text-smoke/60 sm:px-8">
           <span>© 2026 Tiger's Lair — built on the edge</span>
-          <span>PY101 · BA202 · EH301 — demo; records live in your browser</span>
         </div>
       </div>
     </footer>
@@ -243,7 +209,7 @@ function Toasts() {
 }
 
 function Shell() {
-  const { route, authOpen, tgOpen } = useStore();
+  const { route, authOpen } = useStore();
   return (
     <div className="relative min-h-screen">
       <div className="noise-layer" aria-hidden />
@@ -253,12 +219,18 @@ function Shell() {
         {route.view === "home" && <Home />}
         {route.view === "courses" && <Catalog />}
         {route.view === "course" && <CourseDetail key={route.courseId} courseId={route.courseId} />}
+        {route.view === "course-editor" && <CourseEditor key={route.courseId} courseId={route.courseId} />}
         {route.view === "dashboard" && <Dashboard />}
+        {route.view === "mentorshop" && <Mentorshop />}
+        {route.view === "mentorship-apply" && <MentorshipApply />}
+        {route.view === "mentorship-dashboard" && <MentorshipDashboard />}
+        {route.view === "counseling" && <CounselingBook />}
+        {route.view === "meetups" && <Meetups />}
+        {route.view === "admin" && <AdminPanel />}
       </main>
       <Footer />
       <Toasts />
       {authOpen && <AuthModal />}
-      {tgOpen && <TelegramModal />}
     </div>
   );
 }
