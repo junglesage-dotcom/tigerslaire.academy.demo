@@ -3,6 +3,18 @@ main = "worker/src/index.js"
 compatibility_date = "2026-08-26"
 compatibility_flags = ["nodejs_compat"]
 
+# Bundle the Vite-built frontend (dist/) into the Worker so the same
+# `tigerslair-academy.ehisferguson.workers.dev` host serves both
+# /api/* routes and the static SPA at every other path.
+#
+# `not_found_handling = "single-page-application"` makes Cloudflare
+# automatically serve index.html for any URL that doesn't match a file
+# in dist/ — so React Router can handle /admin, /dashboard, etc.
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "tigerslair-db"

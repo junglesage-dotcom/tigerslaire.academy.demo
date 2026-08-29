@@ -1,5 +1,9 @@
 // src/lib/api.ts
-const API_BASE = 'https://tigerslair-api.ehisferguson.workers.dev';
+// Same-origin by default: API and frontend are both served by the
+// `tigerslair-academy` Worker, so requests go to /api/* on the current host.
+// Set VITE_API_BASE at build time to override (e.g. for local dev against a
+// different backend).
+const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
 
 function getToken(): string | null {
   return localStorage.getItem('tigerslair.token');

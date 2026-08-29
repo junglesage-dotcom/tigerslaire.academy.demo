@@ -667,6 +667,15 @@ export default {
         return error('R2 not configured', 500);
       }
 
+      // ===== STATIC FRONTEND =====
+      // Anything that isn't /api/* is served from the bundled dist/ directory.
+      // The Cloudflare Workers Static Assets binding is exposed as env.ASSETS.
+      // The platform-level "not_found_handling = single-page-application" in
+      // wrangler.toml makes missing routes fall back to index.html automatically,
+      // so React Router can handle /admin, /dashboard, etc.
+      if (env.ASSETS) {
+        return env.ASSETS.fetch(request);
+      }
       return error('Not found', 404);
     } catch (err) {
       return error(err.message, 500);
