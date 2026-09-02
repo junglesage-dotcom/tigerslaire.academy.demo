@@ -3,7 +3,7 @@ import { api } from "../lib/api";
 import { useStore } from "../lib/store";
 
 export default function Dashboard() {
-  const { user, go, toast, logout, isEnrolled } = useStore();
+  const { user, go, toast, logout, isEnrolled, linkTelegram } = useStore();
   const [enrollments, setEnrollments] = useState<any[]>([]);
   const [activity, setActivity] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,7 +42,6 @@ export default function Dashboard() {
   const progress = (courseId: string) => {
     const enrollment = enrollments.find(e => e.course_id === courseId);
     if (!enrollment) return 0;
-    // Simplified progress calculation
     return enrollment.quiz_passed ? 100 : 50;
   };
 
@@ -53,7 +52,7 @@ export default function Dashboard() {
         <div>
           <h1 className="font-display text-3xl font-extrabold text-bone">Welcome back, {user.name.split(" ")[0]}</h1>
           <p className="mt-1 text-sm text-smoke">
-            Member since {new Date(user.joined_at).toLocaleDateString()} • {user.role}
+            Member since {new Date(user.joined_at).toLocaleDateString()} · {user.role}
           </p>
         </div>
         <button
@@ -63,6 +62,26 @@ export default function Dashboard() {
           Sign out
         </button>
       </div>
+
+      {/* Telegram Connection Card */}
+      {!user.telegram_id && (
+        <div className="mb-8 rounded-xl border border-tgsky/30 bg-tgsky/5 p-6">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <h2 className="font-display text-xl font-bold text-bone mb-1">Connect Your Telegram Account</h2>
+              <p className="text-sm text-smoke">
+                Link your Telegram to receive daily lesson drops, session reminders, and access the community bot.
+              </p>
+            </div>
+            <button
+              onClick={linkTelegram}
+              className="shrink-0 rounded-md bg-tgsky px-6 py-3 font-display text-sm font-extrabold uppercase tracking-widest text-ink hover:bg-tgsky/90"
+            >
+              Connect Telegram
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Stats Grid */}
       <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -189,7 +208,7 @@ export default function Dashboard() {
                   <div key={act.id} className="rounded border border-bone/5 bg-ink p-3">
                     <p className="text-sm text-bone">{act.text}</p>
                     <p className="text-xs text-smoke mt-1">
-                      {new Date(act.at).toLocaleDateString()} • {act.kind}
+                      {new Date(act.at).toLocaleDateString()} · {act.kind}
                     </p>
                   </div>
                 ))}

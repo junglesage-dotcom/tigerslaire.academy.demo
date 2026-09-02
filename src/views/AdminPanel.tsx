@@ -3,7 +3,7 @@ import { api } from "../lib/api";
 import { useStore } from "../lib/store";
 
 export default function AdminPanel() {
-  const { user, go, toast, confirm } = useStore();
+  const { user, go, toast } = useStore();
   const [activeTab, setActiveTab] = useState<'applications' | 'mentors' | 'instructors' | 'courses'>('applications');
   const [apps, setApps] = useState<any[]>([]);
   const [mentors, setMentors] = useState<any[]>([]);
@@ -11,14 +11,12 @@ export default function AdminPanel() {
   const [courses, setCourses] = useState<any[]>([]);
 
   // Form states
-  const [newMentor, setNewMentor] = useState({ name: "", bio: "", specialties: "tech", hourlyRate: 0 });
+  const [newMentor, setNewMentor] = useState({ name: "", bio: "", specialties: "tech", hourlyRate: 0, imageUrl: "" });
   const [newInstructor, setNewInstructor] = useState({ name: "", bio: "", courseIds: [] as string[] });
   const [newCourse, setNewCourse] = useState({
     code: "", title: "", tagline: "", level: "Beginner", path: "Beginner → Intermediate",
     weeks: 8, price: 0, hue: "#ffa41b", icon: "python", summary: "", outcomes: "", skills: "", channel: ""
   });
-
-  const [proposalForm, setProposalForm] = useState<Record<string, any>>({});
 
   useEffect(() => {
     if (user?.role !== 'admin') {
@@ -46,18 +44,13 @@ export default function AdminPanel() {
     }
   };
 
-  const handlePropose = async (appId: string) => {
-    const data = proposalForm[appId] || {};
-    if (!data.mentorId || !data.price) {
-      return toast("Please select a mentor and set a price");
-    }
+  const handlePropose = async (appId: string, price: number) => {
     try {
-      await api.proposePrice(appId, data.price, data.mentorId, data.firstSessionDate, data.notes);
-      toast("Proposal sent to applicant!");
-      loadAll(); // Refresh the list
-      setProposalForm({ ...proposalForm, [appId]: {} }); // Clear form
+      await api.proposePrice(appId, price, mentors[0]?.id || "mentor_primary");
+      toast("Price proposed");
+      loadAll();
     } catch (e: any) {
-      toast(e.message || "Failed to send proposal");
+      toast(e.message);
     }
   };
 
@@ -70,7 +63,7 @@ export default function AdminPanel() {
         userId: user?.id
       });
       toast("Mentor added");
-      setNewMentor({ name: "", bio: "", specialties: "tech", hourlyRate: 0 });
+      setNewMentor({ name: "", bio: "", specialties: "tech", hourlyRate: 0, imageUrl: "" });
       loadAll();
     } catch (e: any) {
       toast(e.message);
@@ -110,20 +103,14 @@ export default function AdminPanel() {
   };
 
   const handleDeleteInstructor = async (id: string) => {
-    confirm({
-      title: "Delete instructor?",
-      message: "This will remove the instructor and their course assignments. This cannot be undone.",
-      confirmLabel: "Delete",
-      onConfirm: async () => {
-        try {
-          await api.deleteInstructor(id);
-          toast("Instructor deleted");
-          loadAll();
-        } catch (e: any) {
-          toast(e.message);
-        }
-      },
-    });
+    if (!confirm("Delete this instructor?")) return;
+    try {
+      await api.deleteInstructor(id);
+      toast("Instructor deleted");
+      loadAll();
+    } catch (e: any) {
+      toast(e.message);
+    }
   };
 
   const tabs = [
@@ -143,9 +130,7 @@ export default function AdminPanel() {
           <button
             key={t.id}
             onClick={() => setActiveTab(t.id)}
-            className={`px-4 py-2 font-display text-sm font-bold transition-colors ${
-              activeTab === t.id ? 'text-amber border-b-2 border-amber' : 'text-smoke hover:text-bone'
-            }`}
+            className={`px-4 py-2 font-display text-sm font-bold transition-colors ${activeTab === t.id ? 'text-amber border-b-2 border-amber' : 'text-smoke hover:text-bone'}`}
           >
             {t.label} {t.count > 0 && <span className="ml-1 rounded bg-amber/20 px-1.5 py-0.5 text-[10px] text-amber">{t.count}</span>}
           </button>
@@ -156,102 +141,38 @@ export default function AdminPanel() {
       {activeTab === 'applications' && (
         <div className="rounded-lg border border-bone/10 bg-coal p-6">
           <h2 className="font-display text-xl font-bold text-amber mb-4">Pending Applications</h2>
-          <div className="space-y-6">
+          <div className="space-y-4">
             {apps.filter(a => a.status === 'pending').map((app) => (
-              <div key={app.id} className="rounded border border-bone/5 bg-ink p-5">
-                {/* Applicant Info */}
-                <div className="flex flex-wrap justify-between gap-4 mb-4">
+              <div key={app.id} className="rounded border border-bone/5 bg-ink p-4">
+                <div className="flex justify-between">
                   <div>
-                    <p className="font-bold text-bone text-lg">{app.user_name}</p>
-                    <p className="text-xs text-smoke">{app.user_email}</p>
-                    <p className="text-sm text-amber mt-1 font-bold">{app.category_name || app.custom_category}</p>
+                    <p className="font-bold text-bone">{app.user_name}</p>
+                    <p className="text-xs text-smoke">{app.category_name || app.custom_category}</p>
+                    <p className="mt-2 text-sm text-bone/80 italic">"{app.goals}"</p>
                   </div>
-                  <div className="text-right">
-                    <p className="text-xs text-smoke">Payment Status</p>
-                    <p className="font-mono text-sm text-bone uppercase">{app.payment_status}</p>
-                  </div>
+                  <p className="text-xs text-smoke">Payment: {app.payment_status}</p>
                 </div>
-
-                <p className="text-sm text-bone/80 italic border-l-2 border-amber/30 pl-3 mb-4">
-                  "{app.goals}"
-                </p>
-
-                {/* Proposal Form */}
-                <div className="rounded-lg border border-amber/20 bg-amber/5 p-4 space-y-3">
-                  <p className="text-xs font-bold uppercase tracking-widest text-amber mb-2">Send Proposal</p>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[10px] uppercase text-smoke font-bold">Assign Mentor</label>
-                      <select
-                        className="w-full mt-1 rounded border border-bone/10 bg-coal p-2 text-sm text-bone"
-                        value={proposalForm[app.id]?.mentorId || ''}
-                        onChange={(e) => setProposalForm({
-                          ...proposalForm,
-                          [app.id]: { ...proposalForm[app.id], mentorId: e.target.value }
-                        })}
-                      >
-                        <option value="">Select a mentor...</option>
-                        {mentors.map(m => (
-                          <option key={m.id} value={m.id}>{m.name} ({m.specialties?.join(', ')})</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="text-[10px] uppercase text-smoke font-bold">Proposed Rate (₦)</label>
-                      <input
-                        type="number"
-                        placeholder="e.g., 50000"
-                        className="w-full mt-1 rounded border border-bone/10 bg-coal p-2 text-sm text-bone"
-                        value={proposalForm[app.id]?.price || ''}
-                        onChange={(e) => setProposalForm({
-                          ...proposalForm,
-                          [app.id]: { ...proposalForm[app.id], price: parseInt(e.target.value) || 0 }
-                        })}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-[10px] uppercase text-smoke font-bold">First Session Date/Time</label>
-                      <input
-                        type="datetime-local"
-                        className="w-full mt-1 rounded border border-bone/10 bg-coal p-2 text-sm text-bone [color-scheme:dark]"
-                        value={proposalForm[app.id]?.firstSessionDate || ''}
-                        onChange={(e) => setProposalForm({
-                          ...proposalForm,
-                          [app.id]: { ...proposalForm[app.id], firstSessionDate: e.target.value }
-                        })}
-                      />
-                    </div>
-
-                    <div className="sm:col-span-2">
-                      <label className="text-[10px] uppercase text-smoke font-bold">Notes to Applicant</label>
-                      <textarea
-                        rows={2}
-                        placeholder="e.g., Hi! I'd love to work with you. Let's start with this session..."
-                        className="w-full mt-1 rounded border border-bone/10 bg-coal p-2 text-sm text-bone"
-                        value={proposalForm[app.id]?.notes || ''}
-                        onChange={(e) => setProposalForm({
-                          ...proposalForm,
-                          [app.id]: { ...proposalForm[app.id], notes: e.target.value }
-                        })}
-                      />
-                    </div>
-                  </div>
-
+                <div className="mt-4 flex gap-2">
+                  <input
+                    type="number"
+                    placeholder="Propose Price (₦)"
+                    className="flex-1 rounded border border-bone/10 bg-coal p-2 text-sm text-bone"
+                    id={`price-${app.id}`}
+                  />
                   <button
-                    onClick={() => handlePropose(app.id)}
-                    className="w-full sm:w-auto rounded bg-amber px-6 py-2 text-xs font-bold uppercase tracking-wider text-ink hover:bg-amber/90 transition-colors"
+                    onClick={() => {
+                      const price = parseInt((document.getElementById(`price-${app.id}`) as HTMLInputElement).value);
+                      if (price) handlePropose(app.id, price);
+                    }}
+                    className="rounded bg-amber px-4 py-2 text-xs font-bold uppercase text-ink"
                   >
-                    Send Proposal →
+                    Propose
                   </button>
                 </div>
               </div>
             ))}
-
             {apps.filter(a => a.status === 'pending').length === 0 && (
-              <p className="text-sm text-smoke text-center py-8">No pending applications. Great job!</p>
+              <p className="text-sm text-smoke">No pending applications.</p>
             )}
           </div>
         </div>
@@ -265,6 +186,8 @@ export default function AdminPanel() {
             <form onSubmit={handleAddMentor} className="space-y-3">
               <input required placeholder="Name" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
                 value={newMentor.name} onChange={e => setNewMentor({...newMentor, name: e.target.value})} />
+              <input placeholder="Image URL (e.g., @url:`https://imgur.com/...`)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
+                value={newMentor.imageUrl} onChange={e => setNewMentor({...newMentor, imageUrl: e.target.value})} />
               <textarea required placeholder="Bio" rows={3} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
                 value={newMentor.bio} onChange={e => setNewMentor({...newMentor, bio: e.target.value})} />
               <input placeholder="Specialties (comma-separated)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
@@ -278,10 +201,19 @@ export default function AdminPanel() {
             <h2 className="font-display text-xl font-bold text-amber mb-4">Current Mentors</h2>
             <div className="space-y-3">
               {mentors.map(m => (
-                <div key={m.id} className="rounded border border-bone/5 bg-ink p-3">
-                  <p className="font-bold text-bone">{m.name}</p>
-                  <p className="text-xs text-smoke">{m.specialties?.join(', ')}</p>
-                  <p className="text-xs text-amber mt-1">₦{m.hourly_rate?.toLocaleString()}/hr</p>
+                <div key={m.id} className="rounded border border-bone/5 bg-ink p-3 flex items-center gap-3">
+                  {m.image_url ? (
+                    <img src={m.image_url} alt={m.name} className="h-10 w-10 rounded-full object-cover" />
+                  ) : (
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber/20 text-amber font-bold">
+                      {m.name.charAt(0)}
+                    </div>
+                  )}
+                  <div className="flex-1">
+                    <p className="font-bold text-bone">{m.name}</p>
+                    <p className="text-xs text-smoke">{m.specialties?.join(', ')}</p>
+                    <p className="text-xs text-amber mt-1">₦{m.hourly_rate?.toLocaleString()}/hr</p>
+                  </div>
                 </div>
               ))}
             </div>
@@ -382,7 +314,7 @@ export default function AdminPanel() {
                 <div key={c.id} className="rounded border border-bone/5 bg-ink p-3 flex justify-between items-center">
                   <div>
                     <p className="font-bold text-bone">{c.code} - {c.title}</p>
-                    <p className="text-xs text-smoke">{c.weeks} weeks • ₦{c.price?.toLocaleString()}</p>
+                    <p className="text-xs text-smoke">{c.weeks} weeks · ₦{c.price?.toLocaleString()}</p>
                   </div>
                   <button
                     onClick={() => go({ view: "course-editor", courseId: c.id } as any)}

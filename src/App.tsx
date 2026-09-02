@@ -3,7 +3,6 @@ import { StoreProvider, useStore } from "./lib/store";
 import Home from "./views/Home";
 import Catalog from "./views/Catalog";
 import CourseDetail from "./views/CourseDetail";
-import CourseEditor from "./views/CourseEditor";
 import Dashboard from "./views/Dashboard";
 import Mentorshop from "./views/Mentorshop";
 import MentorshipApply from "./views/MentorshipApply";
@@ -11,8 +10,10 @@ import MentorshipDashboard from "./views/MentorshipDashboard";
 import CounselingBook from "./views/CounselingBook";
 import Meetups from "./views/Meetups";
 import AdminPanel from "./views/AdminPanel";
-import { AuthModal, ConfirmModal } from "./components/Modals";
-import { IconClaw, IconMenu, IconX } from "./components/Icons";
+import CourseEditor from "./views/CourseEditor";
+import { AuthModal } from "./components/Modals";
+import { IconClaw, IconMenu, IconX, IconPlane } from "./components/Icons";
+import CookieConsent from "./components/CookieConsent";
 
 function StatusStrip() {
   const [secs, setSecs] = useState(86414);
@@ -48,7 +49,7 @@ function Nav() {
   ];
 
   if (user?.role === 'admin') {
-    links.push({ label: "Admin", active: route.view === "admin" || route.view === "course-editor", go: () => go({ view: "admin" }) });
+    links.push({ label: "Admin", active: route.view === "admin", go: () => go({ view: "admin" }) });
   }
 
   const nav = (fn: () => void) => () => {
@@ -65,7 +66,7 @@ function Nav() {
           </span>
           <span className="text-left leading-none">
             <span className="block font-display text-base font-extrabold tracking-tight text-bone">TIGER'S LAIR</span>
-            <span className="mt-1 block font-mono text-[8.5px] uppercase tracking-[0.3em] text-smoke">academy · est. Lagos</span>
+            <span className="mt-1 block font-mono text-[8.5px] uppercase tracking-[0.3em] text-smoke">academy · est. Benin City</span>
           </span>
         </button>
 
@@ -156,7 +157,8 @@ function Footer() {
   return (
     <footer className="border-t border-bone/10 bg-[#120c05]">
       <div className="mx-auto grid max-w-7xl gap-12 px-5 py-16 sm:px-8 lg:grid-cols-12">
-        <div className="lg:col-span-5">
+        {/* Brand & Location */}
+        <div className="lg:col-span-4">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-md bg-amber text-ink">
               <IconClaw className="h-6 w-6" />
@@ -164,30 +166,78 @@ function Footer() {
             <span className="font-display text-lg font-extrabold tracking-tight text-bone">TIGER'S LAIR</span>
           </div>
           <p className="mt-5 max-w-sm text-sm leading-relaxed text-smoke">
-            An academy and mentorship ecosystem built on the edge. Portfolio, agro, and the academy — one professional identity.
+            An educational ecosystem rooted in mentorship, digital therapy, and community building. 
+            Founded by Ehis O. Ferguson in Benin City for the global digital economy.
           </p>
         </div>
-        <div className="lg:col-span-3">
-          <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-amber">Platform</p>
-          <ul className="mt-4 space-y-2.5 text-sm">
+        
+        {/* The 4 Pillars */}
+        <div className="lg:col-span-4">
+          <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-amber mb-4">The Ecosystem</p>
+          <ul className="space-y-3 text-sm">
+            <li className="flex items-start gap-2">
+              <span className="text-amber font-bold">01.</span>
+              <div>
+                <p className="font-bold text-bone">Web Dashboard</p>
+                <p className="text-xs text-smoke">The central hub for enrollment, progress tracking, and certificate management.</p>
+              </div>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-amber font-bold">02.</span>
+              <div>
+                <p className="font-bold text-bone">Telegram Bot</p>
+                <p className="text-xs text-smoke">Your daily delivery truck for lessons, reminders, and community engagement.</p>
+              </div>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-amber font-bold">03.</span>
+              <div>
+                <p className="font-bold text-bone">LMS Engine</p>
+                <p className="text-xs text-smoke">The structured learning management system powering courses, quizzes, and resources.</p>
+              </div>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-amber font-bold">04.</span>
+              <div>
+                <p className="font-bold text-bone">Mini App</p>
+                <p className="text-xs text-smoke">A seamless, in-Telegram mobile experience for learning on the go.</p>
+              </div>
+            </li>
+          </ul>
+        </div>
+
+        {/* Legal & Compliance */}
+        <div className="lg:col-span-4">
+          <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-amber mb-4">Legal & Compliance</p>
+          <ul className="space-y-2.5 text-sm">
             {[
-              { l: "Overview", f: () => go({ view: "home" }) },
-              { l: "Course catalogue", f: () => go({ view: "courses" }) },
-              { l: "Mentorshop", f: () => go({ view: "mentorshop" }) },
-              { l: "Community Meetups", f: () => go({ view: "meetups" }) },
+              { l: "Privacy Policy", f: () => {} },
+              { l: "Terms of Service", f: () => {} },
+              { l: "Cookie Policy", f: () => {} },
+              { l: "Refund Policy", f: () => {} },
+              { l: "Data Protection (NDPR)", f: () => {} },
             ].map((x) => (
               <li key={x.l}>
-                <button onClick={x.f} className="text-smoke transition-colors hover:text-amber">
+                <button onClick={x.f} className="text-smoke transition-colors hover:text-amber text-left">
                   {x.l}
                 </button>
               </li>
             ))}
           </ul>
+          
+          <div className="mt-6 pt-6 border-t border-bone/10">
+            <a href="https://t.me/TigersLairBot" target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm text-tgsky hover:underline">
+              <IconPlane className="h-4 w-4" /> @TigersLairBot
+            </a>
+            <p className="mt-2 text-xs text-smoke">support@tigerslair.academy</p>
+          </div>
         </div>
       </div>
+
       <div className="border-t border-bone/10">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-5 py-5 font-mono text-[9.5px] uppercase tracking-[0.18em] text-smoke/60 sm:px-8">
-          <span>© 2026 Tiger's Lair — built on the edge</span>
+          <span>© 2026 Tiger's Lair Academy. All rights reserved.</span>
+          <span>Benin City, Nigeria</span>
         </div>
       </div>
     </footer>
@@ -219,7 +269,6 @@ function Shell() {
         {route.view === "home" && <Home />}
         {route.view === "courses" && <Catalog />}
         {route.view === "course" && <CourseDetail key={route.courseId} courseId={route.courseId} />}
-        {route.view === "course-editor" && <CourseEditor key={route.courseId} courseId={route.courseId} />}
         {route.view === "dashboard" && <Dashboard />}
         {route.view === "mentorshop" && <Mentorshop />}
         {route.view === "mentorship-apply" && <MentorshipApply />}
@@ -227,11 +276,15 @@ function Shell() {
         {route.view === "counseling" && <CounselingBook />}
         {route.view === "meetups" && <Meetups />}
         {route.view === "admin" && <AdminPanel />}
+        {route.view === "course-editor" && <CourseEditor courseId={route.courseId} />}
       </main>
       <Footer />
       <Toasts />
       {authOpen && <AuthModal />}
-      <ConfirmModal />
+      
+      {/* ADD THIS LINE RIGHT HERE */}
+      <CookieConsent />
+      
     </div>
   );
 }

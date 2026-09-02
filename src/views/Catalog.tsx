@@ -51,25 +51,21 @@ export default function Catalog() {
           <span className="font-mono text-xs uppercase tracking-[0.3em] text-amber">Course Catalog</span>
         </div>
         <h1 className="font-display text-4xl font-extrabold tracking-tight text-bone sm:text-5xl">
-          Learn. Build. Ship.
+          All Tracks in One Den
         </h1>
         <p className="mt-4 max-w-2xl text-lg text-smoke">
-          Practical courses built around real-world problems. Every lesson drops into your private Telegram channel — the website tracks what you finish.
+          Practical courses built around real-world problems. Every lesson drops into your private Telegram channel, and the website tracks what you finish.
         </p>
       </div>
 
       {/* Filters */}
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap gap-2">
-          {(['all', 'Beginner', 'Intermediate', 'Advanced'] as const).map((f) => (
+          {['all', 'Beginner', 'Intermediate', 'Advanced'].map((f) => (
             <button
               key={f}
               onClick={() => setFilter(f)}
-              className={`rounded-md px-4 py-2 font-display text-xs font-bold uppercase tracking-widest transition-colors ${
-                filter === f
-                  ? 'bg-amber text-ink'
-                  : 'border border-bone/10 text-smoke hover:border-amber hover:text-amber'
-              }`}
+              className={`rounded-md px-4 py-2 font-display text-xs font-bold uppercase tracking-widest transition-colors ${filter === f ? 'bg-amber text-ink' : 'border border-bone/10 text-smoke hover:border-amber hover:text-amber'}`}
             >
               {f === 'all' ? 'All Levels' : f}
             </button>
@@ -130,7 +126,9 @@ export default function Catalog() {
                     <span className="rounded bg-bone/5 px-2 py-1 text-bone">{course.level}</span>
                     <span className="rounded bg-bone/5 px-2 py-1 text-bone">{course.weeks} weeks</span>
                     {enrolled && (
-                      <span className="rounded bg-mint/20 px-2 py-1 text-mint font-bold">✓ Enrolled</span>
+                      <span className="rounded bg-mint/20 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-mint">
+                        ✓ Enrolled
+                      </span>
                     )}
                   </div>
 

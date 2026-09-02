@@ -29,25 +29,18 @@ export type Route =
   | { view: "home" }
   | { view: "courses" }
   | { view: "course"; courseId: string }
-  | { view: "course-editor"; courseId: string }
   | { view: "dashboard" }
   | { view: "mentorshop" }
-  | { view: "mentorship-apply" }
+  | { view: "mentorship-apply"; categoryId?: string }
   | { view: "mentorship-dashboard" }
   | { view: "counseling" }
   | { view: "meetups" }
-  | { view: "admin" };
+  | { view: "admin" }
+  | { view: "course-editor"; courseId: string };
 
-interface Toast {
+export interface Toast {
   id: string;
   text: string;
-}
-
-interface ConfirmState {
-  title: string;
-  message: string;
-  confirmLabel: string;
-  onConfirm: () => void;
 }
 
 interface StoreCtx {
@@ -68,9 +61,6 @@ interface StoreCtx {
   submitQuiz: (courseId: string, score: number, total: number) => Promise<boolean>;
   linkTelegram: () => Promise<void>;
   unlinkTelegram: () => Promise<void>;
-  confirmState: ConfirmState | null;
-  confirm: (opts: { title?: string; message: string; confirmLabel?: string; onConfirm: () => void }) => void;
-  closeConfirm: () => void;
 }
 
 const Ctx = createContext<StoreCtx | null>(null);
@@ -82,21 +72,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [authOpen, setAuthOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem("tigerslair.token");
     if (token) {
-      api
-        .getMe()
-        .then((res) => {
-          setUser(res.data);
-          fetchEnrollments();
-        })
-        .catch(() => {
-          clearToken();
-        })
-        .finally(() => setIsLoading(false));
+      api.getMe().then(res => {
+        setUser(res.data);
+        fetchEnrollments();
+      }).catch(() => {
+        clearToken();
+      }).finally(() => setIsLoading(false));
     } else {
       setIsLoading(false);
     }
@@ -106,9 +91,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     try {
       const res = await api.getEnrollments();
       setEnrollments(res.data);
-    } catch (e) {
-      /* ignore */
-    }
+    } catch (e) { /* ignore */ }
   };
 
   const toast = useCallback((text: string) => {
@@ -122,44 +105,42 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     window.scrollTo(0, 0);
   }, []);
 
-  const register = useCallback(
-    async (name: string, email: string) => {
-      try {
-        const res = await api.register(name, email);
-        setUser(res.data);
-        toast("Welcome to the Lair, " + name.split(" ")[0]);
-        setAuthOpen(false);
-      } catch (e: any) {
-        toast(e.message || "Registration failed");
-      }
-    },
-    [toast]
-  );
+  const register = useCallback(async (name: string, email: string) => {
+    try {
+      const res = await api.register(name, email);
+      setUser(res.data);
+      toast("Welcome to the Lair, " + name.split(" ")[0]);
+      setAuthOpen(false);
+    } catch (e: any) {
+      toast(e.message || "Registration failed");
+    }
+  }, [toast]);
 
-  const login = useCallback(
-    async (email: string) => {
-      try {
-        const res = await api.login(email);
-        setUser(res.data);
-        toast("Signed in as " + res.data.name.split(" ")[0]);
-        setAuthOpen(false);
-        fetchEnrollments();
-      } catch (e: any) {
-        toast(e.message || "Login failed");
-      }
-    },
-    [toast]
-  );
+  const login = useCallback(async (email: string) => {
+    try {
+      const res = await api.login(email);
+      setUser(res.data);
+      toast("Signed in as " + res.data.name.split(" ")[0]);
+      setAuthOpen(false);
+      fetchEnrollments();
+    } catch (e: any) {
+      toast(e.message || "Login failed");
+    }
+  }, [toast]);
 
   const loginDemo = useCallback(async () => {
     try {
       const res = await api.loginDemo();
+      // Ensure token is saved
+      if (res.token) {
+        localStorage.setItem("tigerslair.token", res.token);
+      }
       setUser(res.data);
       toast("Demo student loaded — meet Ada");
       setAuthOpen(false);
       fetchEnrollments();
     } catch (e: any) {
-      toast("Failed to load demo");
+      toast(e.message || "Failed to load demo");
     }
   }, [toast]);
 
@@ -171,55 +152,43 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     go({ view: "home" });
   }, [toast, go]);
 
-  const enroll = useCallback(
-    async (courseId: string) => {
-      try {
-        await api.enroll(courseId);
-        toast("Enrolled successfully");
-        fetchEnrollments();
-      } catch (e: any) {
-        toast(e.message || "Enrollment failed");
-      }
-    },
-    [toast]
-  );
+  const enroll = useCallback(async (courseId: string) => {
+    try {
+      await api.enroll(courseId);
+      toast("Enrolled successfully");
+      fetchEnrollments();
+    } catch (e: any) {
+      toast(e.message || "Enrollment failed");
+    }
+  }, [toast]);
 
-  const isEnrolled = useCallback(
-    (courseId: string) => {
-      return enrollments.some((e) => e.course_id === courseId);
-    },
-    [enrollments]
-  );
+  const isEnrolled = useCallback((courseId: string) => {
+    return enrollments.some((e) => e.course_id === courseId);
+  }, [enrollments]);
 
-  const completeLesson = useCallback(
-    async (courseId: string, lessonId: string) => {
-      try {
-        await api.completeLesson(courseId, lessonId);
-        toast("Lesson marked complete");
-      } catch (e: any) {
-        toast(e.message || "Failed to complete lesson");
-      }
-    },
-    [toast]
-  );
+  const completeLesson = useCallback(async (courseId: string, lessonId: string) => {
+    try {
+      await api.completeLesson(courseId, lessonId);
+      toast("Lesson marked complete");
+    } catch (e: any) {
+      toast(e.message || "Failed to complete lesson");
+    }
+  }, [toast]);
 
-  const submitQuiz = useCallback(
-    async (courseId: string, score: number, total: number) => {
-      try {
-        const res = await api.submitQuiz(courseId, score, total);
-        if (res.passed) {
-          toast("Quiz passed — " + score + "/" + total + ". One step from the certificate");
-        } else {
-          toast(score + "/" + total + " — you need 70% to pass. Review and retry");
-        }
-        return res.passed;
-      } catch (e: any) {
-        toast(e.message || "Failed to submit quiz");
-        return false;
+  const submitQuiz = useCallback(async (courseId: string, score: number, total: number) => {
+    try {
+      const res = await api.submitQuiz(courseId, score, total);
+      if (res.passed) {
+        toast("Quiz passed — " + score + "/" + total + ". One step from the certificate");
+      } else {
+        toast(score + "/" + total + " — you need 70% to pass. Review and retry");
       }
-    },
-    [toast]
-  );
+      return res.passed;
+    } catch (e: any) {
+      toast(e.message || "Failed to submit quiz");
+      return false;
+    }
+  }, [toast]);
 
   const linkTelegram = useCallback(async () => {
     try {
@@ -245,20 +214,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [toast, user]);
 
-  const closeConfirm = useCallback(() => setConfirmState(null), []);
-
-  const confirm = useCallback(
-    (opts: { title?: string; message: string; confirmLabel?: string; onConfirm: () => void }) => {
-      setConfirmState({
-        title: opts.title ?? "Are you sure?",
-        message: opts.message,
-        confirmLabel: opts.confirmLabel ?? "Confirm",
-        onConfirm: opts.onConfirm,
-      });
-    },
-    []
-  );
-
   const value: StoreCtx = {
     user,
     route,
@@ -277,9 +232,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     submitQuiz,
     linkTelegram,
     unlinkTelegram,
-    confirmState,
-    confirm,
-    closeConfirm,
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

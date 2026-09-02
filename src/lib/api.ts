@@ -1,9 +1,8 @@
 // src/lib/api.ts
-// Same-origin by default: API and frontend are both served by the
-// `tigerslair-academy` Worker, so requests go to /api/* on the current host.
-// Set VITE_API_BASE at build time to override (e.g. for local dev against a
-// different backend).
-const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
+
+// Use the environment variable if it exists (for Cloudflare Pages deployment),
+// otherwise fall back to your actual deployed Worker URL for local development.
+const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) || 'https://tigerslair-academy.ehisferguson.workers.dev';
 
 function getToken(): string | null {
   return localStorage.getItem('tigerslair.token');
