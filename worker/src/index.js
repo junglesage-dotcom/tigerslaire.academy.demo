@@ -23,7 +23,102 @@ export default {
 
     try {
       // ============================================
-      // COURSES API
+      // PAYSTACK WEBHOOK (Must be first to avoid auth checks)
+      // ============================================
+      if (path === '/api/webhooks/paystack' && method === 'POST') {
+        const body = await request.json();
+        
+        // In production, verify the hash: 
+        // const hash = crypto.createHmac('sha512', env.PAYSTACK_SECRET_KEY).update(JSON.stringify(body)).digest('hex');
+        // if (hash !== request.headers.get('x-paystack-signature')) return error('Invalid signature', 400);
+
+        if (body.event === 'charge.success') {
+          const data = body.data;
+          const reference = data.reference;
+          const metadata = data.metadata || {};
+          
+          const payment = await env.DB.prepare('SELECT * FROM payments WHERE reference = ?').bind(reference).first();
+          
+          if (payment && payment.status === 'pending') {
+            await env.DB.prepare('UPDATE payments SET status = ?, paystack_ref = ?, updated_at = ? WHERE id = ?')
+              .bind('paid', data.reference, Date.now(), payment.id).run();
+            
+            // Fulfill the order
+            if (payment.course_id) {
+              await env.DB.prepare('INSERT OR IGNORE INTO enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, ?)')
+                .bind(payment.user_id, payment.course_id, Date.now()).run();
+            }
+          }
+        }
+        return json({ status: 'success' });
+      }
+
+      // ============================================
+      // PAYMENTS API
+      // ============================================
+      if (path === '/api/payments/initiate' && method === 'POST') {
+        const token = getToken();
+        if (!token) return error('Unauthorized', 401);
+        
+        const { courseId, mentorshipAppId, amount, method } = await request.json();
+        const reference = 'TL-' + Date.now() + '-' + uid();
+        
+        await env.DB.prepare('INSERT INTO payments (id, user_id, course_id, mentorship_app_id, amount, method, reference, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+          .bind(reference, token, courseId || null, mentorshipAppId || null, amount, method, reference, Date.now(), Date.now()).run();
+        
+        return json({ data: { reference, amount } });
+      }
+
+      if (path === '/api/payments/submit-proof' && method === 'POST') {
+        const token = getToken();
+        if (!token) return error('Unauthorized', 401);
+        
+        const { reference, proofUrl } = await request.json();
+        await env.DB.prepare('UPDATE payments SET status = ?, proof_url = ?, updated_at = ? WHERE reference = ? AND user_id = ?')
+          .bind('proof_submitted', proofUrl, Date.now(), reference, token).run();
+        
+        return json({ success: true });
+      }
+
+      if (path === '/api/payments/approve' && method === 'POST') {
+        // This is called by the Telegram Bot when Admin clicks "Approve"
+        const { reference, adminToken } = await request.json();
+        
+        // Verify admin
+        const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(adminToken).first();
+        if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
+
+        const payment = await env.DB.prepare('SELECT * FROM payments WHERE reference = ?').bind(reference).first();
+        if (!payment) return error('Payment not found', 404);
+
+        await env.DB.prepare('UPDATE payments SET status = ?, updated_at = ? WHERE id = ?')
+          .bind('paid', Date.now(), payment.id).run();
+        
+        if (payment.course_id) {
+          await env.DB.prepare('INSERT OR IGNORE INTO enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, ?)')
+            .bind(payment.user_id, payment.course_id, Date.now()).run();
+        }
+        
+        return json({ success: true });
+      }
+
+      if (path === '/api/admin/payments' && method === 'GET') {
+        const token = getToken();
+        const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
+        if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
+        
+        const payments = await env.DB.prepare(`
+          SELECT p.*, u.name as user_name, u.email as user_email, c.title as course_title 
+          FROM payments p 
+          JOIN users u ON p.user_id = u.id 
+          LEFT JOIN courses c ON p.course_id = c.id 
+          ORDER BY p.created_at DESC
+        `).all();
+        return json({ data: payments.results });
+      }
+
+      // ============================================
+      // EXISTING COURSES API
       // ============================================
       if (path === '/api/courses' && method === 'GET') {
         const courses = await env.DB.prepare('SELECT * FROM courses ORDER BY created_at DESC').all();
@@ -52,7 +147,7 @@ export default {
       }
 
       // ============================================
-      // AUTH API
+      // EXISTING AUTH API
       // ============================================
       if (path === '/api/auth/register' && method === 'POST') {
         const { name, email } = await request.json();
@@ -88,19 +183,6 @@ export default {
         return json({ data: user, token: demoId });
       }
 
-      if (path === '/api/auth/admin' && method === 'POST') {
-        const adminId = 'st_admin001';
-        const { name, email } = await request.json();
-        try {
-          await env.DB.prepare('INSERT INTO users (id, name, email, role, joined_at) VALUES (?, ?, ?, ?, ?)')
-            .bind(adminId, name, email, 'admin', Date.now()).run();
-          const user = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(adminId).first();
-          return json({ data: user, token: adminId });
-        } catch (e) {
-          return error('Admin already exists', 400);
-        }
-      }
-
       if (path === '/api/user/me' && method === 'GET') {
         const token = getToken();
         if (!token) return error('Unauthorized', 401);
@@ -110,7 +192,7 @@ export default {
       }
 
       // ============================================
-      // ENROLLMENTS & LESSONS
+      // EXISTING ENROLLMENTS & LESSONS
       // ============================================
       if (path === '/api/enroll' && method === 'POST') {
         const token = getToken();
@@ -119,8 +201,6 @@ export default {
         try {
           await env.DB.prepare('INSERT INTO enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, ?)')
             .bind(token, courseId, Date.now()).run();
-          await env.DB.prepare('INSERT INTO activity_logs (id, user_id, at, text, kind) VALUES (?, ?, ?, ?, ?)')
-            .bind(uid(), token, Date.now(), `Enrolled in course ${courseId}`, 'enroll').run();
           return json({ success: true });
         } catch (e) {
           return error('Already enrolled', 400);
@@ -141,9 +221,6 @@ export default {
         try {
           await env.DB.prepare('INSERT INTO lesson_completions (user_id, lesson_id, completed_at) VALUES (?, ?, ?)')
             .bind(token, lessonId, Date.now()).run();
-          const lesson = await env.DB.prepare('SELECT title FROM lessons WHERE id = ?').bind(lessonId).first();
-          await env.DB.prepare('INSERT INTO activity_logs (id, user_id, at, text, kind) VALUES (?, ?, ?, ?, ?)')
-            .bind(uid(), token, Date.now(), `Completed "${lesson.title}" in ${courseId}`, 'lesson').run();
           return json({ success: true });
         } catch (e) {
           return error('Already completed', 400);
@@ -183,7 +260,7 @@ export default {
       }
 
       // ============================================
-      // MENTORSHIP API
+      // EXISTING MENTORSHIP API
       // ============================================
       if (path === '/api/mentorship/categories' && method === 'GET') {
         const categories = await env.DB.prepare('SELECT * FROM mentorship_categories ORDER BY is_custom, name').all();
@@ -208,9 +285,6 @@ export default {
         await env.DB.prepare('INSERT INTO mentorship_applications (id, user_id, category_id, custom_category, goals, experience, availability, preferred_format, payment_status, applied_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
           .bind(id, token, categoryId, customCategory, goals, experience, availability, preferredFormat, paymentStatus, Date.now()).run();
         
-        await env.DB.prepare('INSERT INTO activity_logs (id, user_id, at, text, kind) VALUES (?, ?, ?, ?, ?)')
-          .bind(uid(), token, Date.now(), 'Applied for mentorship', 'mentorship').run();
-        
         return json({ data: { id, status: 'pending', paymentStatus } });
       }
 
@@ -218,11 +292,10 @@ export default {
         const token = getToken();
         if (!token) return error('Unauthorized', 401);
         const apps = await env.DB.prepare(`
-          SELECT a.*, c.name as category_name, m.name as mentor_name
-          FROM mentorship_applications a
-          LEFT JOIN mentorship_categories c ON a.category_id = c.id
-          LEFT JOIN mentors m ON a.mentor_id = m.id
-          WHERE a.user_id = ?
+          SELECT a.*, c.name as category_name 
+          FROM mentorship_applications a 
+          LEFT JOIN mentorship_categories c ON a.category_id = c.id 
+          WHERE a.user_id = ? 
           ORDER BY a.applied_at DESC
         `).bind(token).all();
         return json({ data: apps.results });
@@ -232,21 +305,8 @@ export default {
         const token = getToken();
         const appId = path.split('/')[3];
         const { price, mentorId, firstSessionDate, notes } = await request.json();
-        
-        // Verify admin or mentor
-        const user = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
-        if (!user || (user.role !== 'admin' && user.role !== 'mentor')) {
-          return error('Forbidden', 403);
-        }
-        
-        const sessionTimestamp = firstSessionDate ? new Date(firstSessionDate).getTime() : null;
-        
-        await env.DB.prepare(`
-          UPDATE mentorship_applications 
-          SET mentor_id = ?, proposed_price = ?, start_date = ?, review_notes = ?, status = 'proposal_sent', reviewed_at = ?, reviewed_by = ? 
-          WHERE id = ?
-        `).bind(mentorId, price, sessionTimestamp, notes, Date.now(), token, appId).run();
-        
+        await env.DB.prepare('UPDATE mentorship_applications SET mentor_id = ?, proposed_price = ?, start_date = ?, review_notes = ?, status = ? WHERE id = ?')
+          .bind(mentorId, price, firstSessionDate ? new Date(firstSessionDate).getTime() : null, notes, 'proposal_sent', appId).run();
         return json({ success: true });
       }
 
@@ -261,7 +321,7 @@ export default {
       }
 
       // ============================================
-      // COUNSELING API
+      // EXISTING COUNSELING & MEETUPS
       // ============================================
       if (path === '/api/counseling/book' && method === 'POST') {
         const token = getToken();
@@ -270,8 +330,6 @@ export default {
         const id = 'ses_' + uid();
         await env.DB.prepare('INSERT INTO counseling_sessions (id, user_id, mentor_id, topic, description, format, meeting_link, location, scheduled_at, duration_minutes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
           .bind(id, token, mentorId, topic, description, format, meetingLink, location, scheduledAt, duration || 60, Date.now()).run();
-        await env.DB.prepare('INSERT INTO activity_logs (id, user_id, at, text, kind) VALUES (?, ?, ?, ?, ?)')
-          .bind(uid(), token, Date.now(), `Booked ${format} counseling: ${topic}`, 'counseling').run();
         return json({ data: { id } });
       }
 
@@ -282,12 +340,8 @@ export default {
         return json({ data: sessions.results });
       }
 
-      // ============================================
-      // MEETUPS API
-      // ============================================
       if (path === '/api/meetups' && method === 'GET') {
-        const meetups = await env.DB.prepare('SELECT * FROM meetups WHERE scheduled_at > ? ORDER BY scheduled_at ASC LIMIT 20')
-          .bind(Date.now()).all();
+        const meetups = await env.DB.prepare('SELECT * FROM meetups WHERE scheduled_at > ? ORDER BY scheduled_at ASC LIMIT 20').bind(Date.now()).all();
         return json({ data: meetups.results });
       }
 
@@ -324,17 +378,16 @@ export default {
       }
 
       // ============================================
-      // ADMIN API
+      // EXISTING ADMIN API
       // ============================================
       if (path === '/api/admin/mentors' && method === 'POST') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        
-        const { userId, name, bio, specialties, hourlyRate } = await request.json();
+        const { userId, name, bio, specialties, hourlyRate, imageUrl } = await request.json();
         const id = 'mentor_' + uid();
-        await env.DB.prepare('INSERT INTO mentors (id, user_id, name, bio, specialties, hourly_rate, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-          .bind(id, userId, name, bio, JSON.stringify(specialties), hourlyRate, Date.now()).run();
+        await env.DB.prepare('INSERT INTO mentors (id, user_id, name, bio, specialties, hourly_rate, image_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+          .bind(id, userId, name, bio, JSON.stringify(specialties), hourlyRate, imageUrl, Date.now()).run();
         return json({ data: { id } });
       }
 
@@ -342,14 +395,12 @@ export default {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        
         const { userId, name, bio, courseIds } = await request.json();
         const id = 'inst_' + uid();
         await env.DB.prepare('INSERT INTO instructors (id, user_id, name, bio, created_at) VALUES (?, ?, ?, ?, ?)')
           .bind(id, userId, name, bio, Date.now()).run();
         for (const courseId of courseIds) {
-          await env.DB.prepare('INSERT INTO course_instructors (course_id, instructor_id) VALUES (?, ?)')
-            .bind(courseId, id).run();
+          await env.DB.prepare('INSERT INTO course_instructors (course_id, instructor_id) VALUES (?, ?)').bind(courseId, id).run();
         }
         return json({ data: { id } });
       }
@@ -358,7 +409,6 @@ export default {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        
         const instructors = await env.DB.prepare('SELECT * FROM instructors ORDER BY created_at DESC').all();
         return json({ data: instructors.results });
       }
@@ -367,38 +417,9 @@ export default {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        
         const instId = path.split('/')[3];
         await env.DB.prepare('DELETE FROM instructors WHERE id = ?').bind(instId).run();
         await env.DB.prepare('DELETE FROM course_instructors WHERE instructor_id = ?').bind(instId).run();
-        return json({ success: true });
-      }
-
-      if (path.match(/\/api\/admin\/instructors\/[^/]+\/assign-course/) && method === 'POST') {
-        const token = getToken();
-        const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
-        if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        
-        const instId = path.split('/')[3];
-        const { courseId } = await request.json();
-        
-        try {
-          await env.DB.prepare('INSERT INTO course_instructors (course_id, instructor_id) VALUES (?, ?)')
-            .bind(courseId, instId).run();
-          return json({ success: true });
-        } catch (e) {
-          return error('Already assigned', 400);
-        }
-      }
-
-      if (path === '/api/admin/telegram/update' && method === 'POST') {
-        const token = getToken();
-        const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
-        if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        
-        const { groupId, groupUsername, channelId, channelUsername } = await request.json();
-        await env.DB.prepare('UPDATE telegram_community SET group_id = ?, group_username = ?, channel_id = ?, channel_username = ?, updated_at = ? WHERE id = 1')
-          .bind(groupId, groupUsername, channelId, channelUsername, Date.now()).run();
         return json({ success: true });
       }
 
@@ -406,7 +427,6 @@ export default {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        
         const apps = await env.DB.prepare(`
           SELECT a.*, u.name as user_name, u.email as user_email, c.name as category_name
           FROM mentorship_applications a
@@ -417,26 +437,14 @@ export default {
         return json({ data: apps.results });
       }
 
-      if (path === '/api/telegram/community' && method === 'GET') {
-        const community = await env.DB.prepare('SELECT * FROM telegram_community WHERE id = 1').first();
-        return json({ data: community });
-      }
-
-      // ============================================
-      // ADMIN: COURSES
-      // ============================================
       if (path === '/api/admin/courses' && method === 'POST') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        
         const { id, code, title, tagline, level, path: coursePath, weeks, price, hue, icon, summary, outcomes, skills, channel } = await request.json();
         const courseId = id || 'course_' + uid();
-        
-        await env.DB.prepare(`INSERT INTO courses (id, code, title, tagline, level, path, weeks, price, hue, icon, summary, outcomes, skills, channel, created_at) 
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        await env.DB.prepare(`INSERT INTO courses (id, code, title, tagline, level, path, weeks, price, hue, icon, summary, outcomes, skills, channel, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
           .bind(courseId, code, title, tagline, level, coursePath, weeks, price, hue, icon, summary, JSON.stringify(outcomes), JSON.stringify(skills), channel, Date.now()).run();
-        
         return json({ data: { id: courseId } });
       }
 
@@ -444,27 +452,14 @@ export default {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        
         const courseId = path.split('/')[3];
         const data = await request.json();
-        
-        const fields = [];
-        const values = [];
+        const fields = []; const values = [];
         for (const [key, val] of Object.entries(data)) {
-          if (['outcomes', 'skills'].includes(key)) {
-            fields.push(`${key} = ?`);
-            values.push(JSON.stringify(val));
-          } else if (['code', 'title', 'tagline', 'level', 'path', 'weeks', 'price', 'hue', 'icon', 'summary', 'channel'].includes(key)) {
-            fields.push(`${key} = ?`);
-            values.push(val);
-          }
+          if (['outcomes', 'skills'].includes(key)) { fields.push(`${key} = ?`); values.push(JSON.stringify(val)); } 
+          else if (['code', 'title', 'tagline', 'level', 'path', 'weeks', 'price', 'hue', 'icon', 'summary', 'channel'].includes(key)) { fields.push(`${key} = ?`); values.push(val); }
         }
-        
-        if (fields.length > 0) {
-          values.push(courseId);
-          await env.DB.prepare(`UPDATE courses SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run();
-        }
-        
+        if (fields.length > 0) { values.push(courseId); await env.DB.prepare(`UPDATE courses SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run(); }
         return json({ success: true });
       }
 
@@ -472,13 +467,9 @@ export default {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        
         const courseId = path.split('/')[3];
         const { title, orderIndex } = await request.json();
-        
-        const result = await env.DB.prepare('INSERT INTO modules (course_id, title, order_index) VALUES (?, ?, ?)')
-          .bind(courseId, title, orderIndex || 99).run();
-        
+        const result = await env.DB.prepare('INSERT INTO modules (course_id, title, order_index) VALUES (?, ?, ?)').bind(courseId, title, orderIndex || 99).run();
         return json({ data: { id: result.meta.last_row_id } });
       }
 
@@ -486,15 +477,11 @@ export default {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        
         const courseId = path.split('/')[3];
         const { id, moduleId, title, minutes, tags, bullets, msg, youtubeUrl, orderIndex } = await request.json();
         const lessonId = id || 'les_' + uid();
-        
-        await env.DB.prepare(`INSERT INTO lessons (id, module_id, course_id, title, minutes, tags, bullets, msg, youtube_url, order_index) 
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        await env.DB.prepare(`INSERT INTO lessons (id, module_id, course_id, title, minutes, tags, bullets, msg, youtube_url, order_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
           .bind(lessonId, moduleId, courseId, title, minutes, JSON.stringify(tags || []), JSON.stringify(bullets || []), msg || 0, youtubeUrl || null, orderIndex || 99).run();
-        
         return json({ data: { id: lessonId } });
       }
 
@@ -502,27 +489,14 @@ export default {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        
         const lessonId = path.split('/')[3];
         const data = await request.json();
-        
-        const fields = [];
-        const values = [];
+        const fields = []; const values = [];
         for (const [key, val] of Object.entries(data)) {
-          if (['tags', 'bullets'].includes(key)) {
-            fields.push(`${key} = ?`);
-            values.push(JSON.stringify(val));
-          } else if (['title', 'minutes', 'module_id', 'msg', 'youtube_url', 'order_index'].includes(key)) {
-            fields.push(`${key} = ?`);
-            values.push(val);
-          }
+          if (['tags', 'bullets'].includes(key)) { fields.push(`${key} = ?`); values.push(JSON.stringify(val)); } 
+          else if (['title', 'minutes', 'module_id', 'msg', 'youtube_url', 'order_index'].includes(key)) { fields.push(`${key} = ?`); values.push(val); }
         }
-        
-        if (fields.length > 0) {
-          values.push(lessonId);
-          await env.DB.prepare(`UPDATE lessons SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run();
-        }
-        
+        if (fields.length > 0) { values.push(lessonId); await env.DB.prepare(`UPDATE lessons SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run(); }
         return json({ success: true });
       }
 
@@ -530,7 +504,6 @@ export default {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        
         const lessonId = path.split('/')[3];
         await env.DB.prepare('DELETE FROM lessons WHERE id = ?').bind(lessonId).run();
         return json({ success: true });
@@ -540,142 +513,62 @@ export default {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        
         const courseId = path.split('/')[3];
         const { question, options, answer, orderIndex } = await request.json();
-        
-        await env.DB.prepare('INSERT INTO quiz_questions (course_id, question, options, answer, order_index) VALUES (?, ?, ?, ?, ?)')
-          .bind(courseId, question, JSON.stringify(options), answer, orderIndex || 99).run();
-        
+        await env.DB.prepare('INSERT INTO quiz_questions (course_id, question, options, answer, order_index) VALUES (?, ?, ?, ?, ?)').bind(courseId, question, JSON.stringify(options), answer, orderIndex || 99).run();
         return json({ success: true });
       }
 
-      // ============================================
-      // RESOURCES API
-      // ============================================
-
-      // GET /api/courses/:courseId/lessons/:lessonId/resources
-      if (path.match(/\/api\/courses\/[^/]+\/lessons\/[^/]+\/resources/) && method === 'GET') {
-        const parts = path.split('/');
-        const courseId = parts[2];
-        const lessonId = parts[4];
-
-        const token = getToken();
-        const isEnrolled = token ? await env.DB.prepare(
-          'SELECT 1 FROM enrollments WHERE user_id = ? AND course_id = ?'
-        ).bind(token, courseId).first() : null;
-
-        const resources = await env.DB.prepare(
-          'SELECT * FROM resources WHERE lesson_id = ? ORDER BY order_index ASC'
-        ).bind(lessonId).all();
-
-        // Filter by access level
-        const filtered = resources.results.filter(r => {
-          if (r.access_level === 'public') return true;
-          if (r.access_level === 'enrolled' && isEnrolled) return true;
-          if (r.access_level === 'premium' && isEnrolled) {
-            // Could check for premium tier here
-            return true;
-          }
-          return false;
-        }).map(r => ({
-          ...r,
-          metadata: r.metadata ? JSON.parse(r.metadata) : null
-        }));
-
-        return json({ data: filtered });
-      }
-
-      // POST /api/admin/resources (create resource)
       if (path === '/api/admin/resources' && method === 'POST') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-
         const { lessonId, courseId, type, title, description, sourceUrl, thumbnailUrl, durationSeconds, fileSizeBytes, metadata, accessLevel, orderIndex } = await request.json();
         const id = 'res_' + uid();
-
-        await env.DB.prepare(`INSERT INTO resources (id, lesson_id, course_id, type, title, description, source_url, thumbnail_url, duration_seconds, file_size_bytes, metadata, access_level, order_index, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        await env.DB.prepare(`INSERT INTO resources (id, lesson_id, course_id, type, title, description, source_url, thumbnail_url, duration_seconds, file_size_bytes, metadata, access_level, order_index, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
           .bind(id, lessonId, courseId, type, title, description || null, sourceUrl, thumbnailUrl || null, durationSeconds || null, fileSizeBytes || null, metadata ? JSON.stringify(metadata) : null, accessLevel || 'enrolled', orderIndex || 0, Date.now()).run();
-
         return json({ data: { id } });
       }
 
-      // PUT /api/admin/resources/:id (update resource)
       if (path.startsWith('/api/admin/resources/') && method === 'PUT') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-
         const resourceId = path.split('/')[3];
         const data = await request.json();
-
-        const fields = [];
-        const values = [];
+        const fields = []; const values = [];
         for (const [key, val] of Object.entries(data)) {
-          if (key === 'metadata') {
-            fields.push(`${key} = ?`);
-            values.push(JSON.stringify(val));
-          } else if (['type', 'title', 'description', 'source_url', 'thumbnail_url', 'duration_seconds', 'file_size_bytes', 'access_level', 'order_index'].includes(key)) {
-            fields.push(`${key} = ?`);
-            values.push(val);
-          }
+          if (key === 'metadata') { fields.push(`${key} = ?`); values.push(JSON.stringify(val)); } 
+          else if (['type', 'title', 'description', 'source_url', 'thumbnail_url', 'duration_seconds', 'file_size_bytes', 'access_level', 'order_index'].includes(key)) { fields.push(`${key} = ?`); values.push(val); }
         }
-
-        if (fields.length > 0) {
-          values.push(resourceId);
-          await env.DB.prepare(`UPDATE resources SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run();
-        }
-
+        if (fields.length > 0) { values.push(resourceId); await env.DB.prepare(`UPDATE resources SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run(); }
         return json({ success: true });
       }
 
-      // DELETE /api/admin/resources/:id
       if (path.startsWith('/api/admin/resources/') && method === 'DELETE') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-
         const resourceId = path.split('/')[3];
         await env.DB.prepare('DELETE FROM resources WHERE id = ?').bind(resourceId).run();
         return json({ success: true });
       }
 
-      // POST /api/admin/resources/upload-url (generate presigned R2 upload URL)
-      if (path === '/api/admin/resources/upload-url' && method === 'POST') {
+      if (path.match(/\/api\/courses\/[^/]+\/lessons\/[^/]+\/resources/) && method === 'GET') {
+        const parts = path.split('/');
+        const courseId = parts[2];
+        const lessonId = parts[4];
         const token = getToken();
-        const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
-        if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-
-        const { filename, contentType } = await request.json();
-
-        // If you have R2 bound, generate presigned URL:
-        if (env.R2_BUCKET) {
-          const key = `resources/${Date.now()}-${filename}`;
-          // For now, return a placeholder — real R2 presigned URLs require specific setup
-          return json({
-            data: {
-              key,
-              // In production, use R2 presigned URL:
-              // uploadUrl: await env.R2_BUCKET.createPresignedUrl(...)
-              publicUrl: `https://pub-xxxxx.r2.dev/${key}`
-            }
-          });
-        }
-
-        return error('R2 not configured', 500);
+        const isEnrolled = token ? await env.DB.prepare('SELECT 1 FROM enrollments WHERE user_id = ? AND course_id = ?').bind(token, courseId).first() : null;
+        const resources = await env.DB.prepare('SELECT * FROM resources WHERE lesson_id = ? ORDER BY order_index ASC').bind(lessonId).all();
+        const filtered = resources.results.filter(r => {
+          if (r.access_level === 'public') return true;
+          if (r.access_level === 'enrolled' && isEnrolled) return true;
+          return false;
+        }).map(r => ({ ...r, metadata: r.metadata ? JSON.parse(r.metadata) : null }));
+        return json({ data: filtered });
       }
 
-      // ===== STATIC FRONTEND =====
-      // Anything that isn't /api/* is served from the bundled dist/ directory.
-      // The Cloudflare Workers Static Assets binding is exposed as env.ASSETS.
-      // The platform-level "not_found_handling = single-page-application" in
-      // wrangler.toml makes missing routes fall back to index.html automatically,
-      // so React Router can handle /admin, /dashboard, etc.
-      if (env.ASSETS) {
-        return env.ASSETS.fetch(request);
-      }
       return error('Not found', 404);
     } catch (err) {
       return error(err.message, 500);

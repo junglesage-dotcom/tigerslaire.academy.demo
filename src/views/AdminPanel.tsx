@@ -4,8 +4,9 @@ import { useStore } from "../lib/store";
 
 export default function AdminPanel() {
   const { user, go, toast } = useStore();
-  const [activeTab, setActiveTab] = useState<'applications' | 'mentors' | 'instructors' | 'courses'>('applications');
+  const [activeTab, setActiveTab] = useState<'applications' | 'payments' | 'mentors' | 'instructors' | 'courses'>('applications');
   const [apps, setApps] = useState<any[]>([]);
+  const [payments, setPayments] = useState<any[]>([]); // ADDED
   const [mentors, setMentors] = useState<any[]>([]);
   const [instructors, setInstructors] = useState<any[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
@@ -29,13 +30,15 @@ export default function AdminPanel() {
 
   const loadAll = async () => {
     try {
-      const [appsRes, mentorsRes, instRes, coursesRes] = await Promise.all([
+      const [appsRes, payRes, mentorsRes, instRes, coursesRes] = await Promise.all([
         api.getAllApplications(),
+        api.getPendingPayments(), // ADDED
         api.getMentors(),
         api.getInstructors(),
         api.getCourses()
       ]);
       setApps(appsRes.data);
+      setPayments(payRes.data); // ADDED
       setMentors(mentorsRes.data);
       setInstructors(instRes.data);
       setCourses(coursesRes.data);
@@ -115,6 +118,7 @@ export default function AdminPanel() {
 
   const tabs = [
     { id: 'applications', label: 'Applications', count: apps.filter(a => a.status === 'pending').length },
+    { id: 'payments', label: 'Payments', count: payments.filter(p => p.status === 'proof_submitted').length }, // UPDATED
     { id: 'mentors', label: 'Mentors', count: mentors.length },
     { id: 'instructors', label: 'Instructors', count: instructors.length },
     { id: 'courses', label: 'Courses', count: courses.length },
@@ -125,12 +129,14 @@ export default function AdminPanel() {
       <h1 className="font-display text-3xl font-extrabold text-bone mb-8">Admin Control Panel</h1>
 
       {/* Tabs */}
-      <div className="mb-8 flex gap-2 border-b border-bone/10">
+      <div className="mb-8 flex gap-2 border-b border-bone/10 overflow-x-auto">
         {tabs.map(t => (
           <button
             key={t.id}
             onClick={() => setActiveTab(t.id)}
-            className={`px-4 py-2 font-display text-sm font-bold transition-colors ${activeTab === t.id ? 'text-amber border-b-2 border-amber' : 'text-smoke hover:text-bone'}`}
+            className={`px-4 py-2 font-display text-sm font-bold transition-colors whitespace-nowrap ${
+              activeTab === t.id ? 'text-amber border-b-2 border-amber' : 'text-smoke hover:text-bone'
+            }`}
           >
             {t.label} {t.count > 0 && <span className="ml-1 rounded bg-amber/20 px-1.5 py-0.5 text-[10px] text-amber">{t.count}</span>}
           </button>
@@ -178,6 +184,46 @@ export default function AdminPanel() {
         </div>
       )}
 
+      {/* Payments Tab */}
+      {activeTab === 'payments' && (
+        <div className="rounded-lg border border-bone/10 bg-coal p-6">
+          <h2 className="font-display text-xl font-bold text-amber mb-4">Pending Bank Transfers</h2>
+          <div className="space-y-4">
+            {payments.filter(p => p.status === 'proof_submitted').map((p) => (
+              <div key={p.reference} className="rounded border border-bone/5 bg-ink p-4 flex flex-col sm:flex-row justify-between gap-4">
+                <div>
+                  <p className="font-bold text-bone">{p.user_name} - {p.course_title || 'Mentorship'}</p>
+                  <p className="text-xs text-smoke mt-1">Ref: {p.reference}</p>
+                  <p className="text-sm text-amber font-bold mt-2">₦{p.amount.toLocaleString()}</p>
+                  {p.proof_url && (
+                    <a href={p.proof_url} target="_blank" rel="noreferrer" className="inline-block mt-2 text-xs text-tgsky underline">
+                      View Payment Slip
+                    </a>
+                  )}
+                </div>
+                <button
+                  onClick={async () => {
+                    try {
+                      await api.approvePayment(p.reference);
+                      toast("Payment approved and user enrolled!");
+                      loadAll();
+                    } catch (e: any) {
+                      toast(e.message);
+                    }
+                  }}
+                  className="self-start rounded bg-mint px-6 py-2 text-xs font-bold uppercase text-ink hover:bg-mint/90"
+                >
+                  Approve & Enroll
+                </button>
+              </div>
+            ))}
+            {payments.filter(p => p.status === 'proof_submitted').length === 0 && (
+              <p className="text-sm text-smoke text-center py-8">No pending bank transfer proofs to review.</p>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Mentors Tab */}
       {activeTab === 'mentors' && (
         <div className="grid gap-6 lg:grid-cols-2">
@@ -186,7 +232,7 @@ export default function AdminPanel() {
             <form onSubmit={handleAddMentor} className="space-y-3">
               <input required placeholder="Name" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
                 value={newMentor.name} onChange={e => setNewMentor({...newMentor, name: e.target.value})} />
-              <input placeholder="Image URL (e.g., @url:`https://imgur.com/...`)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
+              <input placeholder="Image URL (e.g., https://imgur.com/...)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
                 value={newMentor.imageUrl} onChange={e => setNewMentor({...newMentor, imageUrl: e.target.value})} />
               <textarea required placeholder="Bio" rows={3} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
                 value={newMentor.bio} onChange={e => setNewMentor({...newMentor, bio: e.target.value})} />
