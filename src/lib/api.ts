@@ -119,6 +119,9 @@ export const api = {
     request<{ data: any }>('/api/admin/mentors', {
       method: 'POST', body: JSON.stringify(data)
     }),
+  deleteMentor: (id: string) =>
+    request<{ success: boolean }>(`/api/admin/mentors/${id}`, { method: 'DELETE' }),
+  
   addInstructor: (data: any) =>
     request<{ data: any }>('/api/admin/instructors', {
       method: 'POST', body: JSON.stringify(data)
@@ -140,6 +143,11 @@ export const api = {
       method: 'PUT', body: JSON.stringify({ price, mentorId, firstSessionDate, notes })
     }),
 
+  // Admin: Users
+  getUsers: () => request<{ data: any[] }>('/api/admin/users'),
+  deleteUser: (id: string) =>
+    request<{ success: boolean }>(`/api/admin/users/${id}`, { method: 'DELETE' }),
+
   // Admin: Courses
   createCourse: (data: any) =>
     request<{ data: any }>('/api/admin/courses', {
@@ -149,6 +157,8 @@ export const api = {
     request<{ success: boolean }>(`/api/admin/courses/${id}`, {
       method: 'PUT', body: JSON.stringify(data)
     }),
+  deleteCourse: (id: string) =>
+    request<{ success: boolean }>(`/api/admin/courses/${id}`, { method: 'DELETE' }),
   addModule: (courseId: string, data: any) =>
     request<{ data: any }>(`/api/admin/courses/${courseId}/modules`, {
       method: 'POST', body: JSON.stringify(data)
@@ -184,5 +194,25 @@ export const api = {
   getUploadUrl: (filename: string, contentType: string) =>
     request<{ data: any }>('/api/admin/resources/upload-url', {
       method: 'POST', body: JSON.stringify({ filename, contentType })
+    }),
+
+  // ==========================================
+  // PAYMENTS
+  // ==========================================
+  initiatePayment: (data: any) =>
+    request<{ data: any }>('/api/payments/initiate', {
+      method: 'POST', body: JSON.stringify(data)
+    }),
+  
+  submitProof: (reference: string, proofUrl: string) =>
+    request<{ success: boolean }>('/api/payments/submit-proof', {
+      method: 'POST', body: JSON.stringify({ reference, proofUrl })
+    }),
+
+  getPendingPayments: () => request<{ data: any[] }>('/api/admin/payments'),
+
+  approvePayment: (reference: string) =>
+    request<{ success: boolean }>('/api/payments/approve', {
+      method: 'POST', body: JSON.stringify({ reference, adminToken: getToken() })
     }),
 };

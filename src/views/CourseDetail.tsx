@@ -2,10 +2,11 @@ import { useEffect, useState, useMemo } from "react";
 import { api } from "../lib/api";
 import { useStore } from "../lib/store";
 import ResourcePlayer from "../components/ResourcePlayer";
+import CheckoutModal from "../components/CheckoutModal";
 import { IconClaw, IconPlane } from "../components/Icons";
 
 export default function CourseDetail({ courseId }: { courseId: string }) {
-  const { user, isEnrolled, enroll, completeLesson: markComplete, submitQuiz, go, toast, setAuthOpen } = useStore();
+  const { user, isEnrolled, completeLesson: markComplete, submitQuiz, go, toast, setAuthOpen } = useStore();
   const [course, setCourse] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [completedLessons, setCompletedLessons] = useState<string[]>([]);
@@ -15,7 +16,8 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
   const [showReview, setShowReview] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'curriculum' | 'quiz' | 'certificate'>('overview');
   const [expandedModule, setExpandedModule] = useState<number | null>(0);
-  const [enrollConfirm, setEnrollConfirm] = useState(false);
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [currency, setCurrency] = useState<'NGN' | 'USD'>('NGN');
   const [lessonResources, setLessonResources] = useState<Record<string, any[]>>({});
 
   useEffect(() => {
@@ -53,20 +55,6 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
       }
     });
   }, [course]);
-
-  const handleEnroll = async () => {
-    if (!user) {
-      setAuthOpen(true);
-      return;
-    }
-    try {
-      await enroll(courseId);
-      toast("Enrolled successfully! Welcome to " + course.code);
-      setEnrollConfirm(false);
-    } catch (e: any) {
-      toast(e.message || "Enrollment failed");
-    }
-  };
 
   const handleCompleteLesson = async (lessonId: string, lessonTitle: string) => {
     if (!user) {
@@ -172,6 +160,8 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
   }
 
   const enrolled = isEnrolled(courseId);
+  const activePrice = currency === 'NGN' ? (course.price || 0) : (course.price_usd || 0);
+  const currencySymbol = currency === 'NGN' ? '₦' : '$';
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: '📋' },
@@ -187,6 +177,28 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
         <span>←</span>
         <span>Back to Course Catalog</span>
       </button>
+
+      {/* Currency Toggle */}
+      <div className="flex justify-end mb-4">
+        <div className="inline-flex gap-1 p-1 rounded-lg bg-ink border border-bone/10">
+          <button
+            onClick={() => setCurrency('NGN')}
+            className={`px-4 py-1.5 text-xs font-bold uppercase tracking-widest rounded-md transition-colors ${
+              currency === 'NGN' ? 'bg-amber text-ink' : 'text-smoke hover:text-bone'
+            }`}
+          >
+            NGN (₦)
+          </button>
+          <button
+            onClick={() => setCurrency('USD')}
+            className={`px-4 py-1.5 text-xs font-bold uppercase tracking-widest rounded-md transition-colors ${
+              currency === 'USD' ? 'bg-amber text-ink' : 'text-smoke hover:text-bone'
+            }`}
+          >
+            USD ($)
+          </button>
+        </div>
+      </div>
 
       {/* Hero Section */}
       <div className="relative overflow-hidden rounded-2xl border border-bone/10 bg-gradient-to-br from-coal via-ink to-coal p-8 sm:p-12 mb-8">
@@ -236,12 +248,12 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
             <div className="flex flex-wrap items-center gap-4">
               <div>
                 <p className="font-display text-4xl font-extrabold" style={{ color: course.hue }}>
-                  ₦{course.price?.toLocaleString()}
+                  {currencySymbol}{activePrice.toLocaleString()}
                 </p>
                 <p className="text-xs text-smoke mt-1">One-time payment • Lifetime access</p>
               </div>
               <button
-                onClick={() => setEnrollConfirm(true)}
+                onClick={() => setShowCheckout(true)}
                 className="stripe-btn rounded-md px-8 py-4 font-display text-sm font-extrabold uppercase tracking-widest text-ink transition-transform hover:-translate-y-0.5"
                 style={{ backgroundColor: course.hue }}
               >
@@ -271,33 +283,6 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
           )}
         </div>
       </div>
-
-      {/* Enrollment Confirmation Modal */}
-      {enrollConfirm && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/90 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl border border-bone/10 bg-coal p-8">
-            <h3 className="font-display text-2xl font-bold text-bone mb-4">Confirm Enrollment</h3>
-            <p className="text-smoke mb-6">
-              You're about to enroll in <span className="font-bold text-bone">{course.code}: {course.title}</span> for <span className="font-bold" style={{ color: course.hue }}>₦{course.price?.toLocaleString()}</span>.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setEnrollConfirm(false)}
-                className="flex-1 rounded-md border border-bone/20 px-4 py-3 font-display text-sm font-bold uppercase tracking-widest text-bone hover:bg-bone/5"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleEnroll}
-                className="flex-1 stripe-btn rounded-md px-4 py-3 font-display text-sm font-extrabold uppercase tracking-widest text-ink"
-                style={{ backgroundColor: course.hue }}
-              >
-                Confirm & Pay
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Tabs */}
       <div className="mb-8 flex gap-1 overflow-x-auto border-b border-bone/10">
@@ -405,13 +390,15 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-smoke">Price</dt>
-                  <dd className="font-display text-xl font-bold" style={{ color: course.hue }}>₦{course.price?.toLocaleString()}</dd>
+                  <dd className="font-display text-xl font-bold" style={{ color: course.hue }}>
+                    {currencySymbol}{activePrice.toLocaleString()}
+                  </dd>
                 </div>
               </dl>
 
               {!enrolled ? (
                 <button
-                  onClick={() => setEnrollConfirm(true)}
+                  onClick={() => setShowCheckout(true)}
                   className="mt-6 w-full stripe-btn rounded-md py-3 font-display text-sm font-extrabold uppercase tracking-widest text-ink"
                   style={{ backgroundColor: course.hue }}
                 >
@@ -547,7 +534,7 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
               <h2 className="font-display text-2xl font-bold text-bone mb-3">Gate Quiz Locked</h2>
               <p className="text-smoke mb-6">You must enroll in this course to access the gate quiz.</p>
               <button
-                onClick={() => setEnrollConfirm(true)}
+                onClick={() => setShowCheckout(true)}
                 className="stripe-btn rounded-md px-8 py-3 font-display text-sm font-extrabold uppercase tracking-widest text-ink"
                 style={{ backgroundColor: course.hue }}
               >
@@ -802,6 +789,17 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
             </div>
           )}
         </div>
+      )}
+
+      {/* Checkout Modal */}
+      {showCheckout && (
+        <CheckoutModal 
+          courseId={courseId} 
+          amount={activePrice} 
+          currency={currency}
+          courseTitle={course.title} 
+          onClose={() => setShowCheckout(false)} 
+        />
       )}
     </div>
   );

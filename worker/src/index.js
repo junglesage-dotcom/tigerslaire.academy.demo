@@ -35,7 +35,6 @@ export default {
         if (body.event === 'charge.success') {
           const data = body.data;
           const reference = data.reference;
-          const metadata = data.metadata || {};
           
           const payment = await env.DB.prepare('SELECT * FROM payments WHERE reference = ?').bind(reference).first();
           
@@ -60,13 +59,13 @@ export default {
         const token = getToken();
         if (!token) return error('Unauthorized', 401);
         
-        const { courseId, mentorshipAppId, amount, method } = await request.json();
+        const { courseId, mentorshipAppId, amount, method, currency } = await request.json();
         const reference = 'TL-' + Date.now() + '-' + uid();
         
-        await env.DB.prepare('INSERT INTO payments (id, user_id, course_id, mentorship_app_id, amount, method, reference, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-          .bind(reference, token, courseId || null, mentorshipAppId || null, amount, method, reference, Date.now(), Date.now()).run();
+        await env.DB.prepare('INSERT INTO payments (id, user_id, course_id, mentorship_app_id, amount, method, currency, reference, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+          .bind(reference, token, courseId || null, mentorshipAppId || null, amount, method, currency || 'NGN', reference, Date.now(), Date.now()).run();
         
-        return json({ data: { reference, amount } });
+        return json({ data: { reference, amount, currency: currency || 'NGN' } });
       }
 
       if (path === '/api/payments/submit-proof' && method === 'POST') {
@@ -81,10 +80,8 @@ export default {
       }
 
       if (path === '/api/payments/approve' && method === 'POST') {
-        // This is called by the Telegram Bot when Admin clicks "Approve"
         const { reference, adminToken } = await request.json();
         
-        // Verify admin
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(adminToken).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
 
@@ -118,7 +115,7 @@ export default {
       }
 
       // ============================================
-      // EXISTING COURSES API
+      // COURSES API
       // ============================================
       if (path === '/api/courses' && method === 'GET') {
         const courses = await env.DB.prepare('SELECT * FROM courses ORDER BY created_at DESC').all();
@@ -147,7 +144,7 @@ export default {
       }
 
       // ============================================
-      // EXISTING AUTH API
+      // AUTH API
       // ============================================
       if (path === '/api/auth/register' && method === 'POST') {
         const { name, email } = await request.json();
@@ -192,7 +189,7 @@ export default {
       }
 
       // ============================================
-      // EXISTING ENROLLMENTS & LESSONS
+      // ENROLLMENTS & LESSONS
       // ============================================
       if (path === '/api/enroll' && method === 'POST') {
         const token = getToken();
@@ -260,7 +257,7 @@ export default {
       }
 
       // ============================================
-      // EXISTING MENTORSHIP API
+      // MENTORSHIP API
       // ============================================
       if (path === '/api/mentorship/categories' && method === 'GET') {
         const categories = await env.DB.prepare('SELECT * FROM mentorship_categories ORDER BY is_custom, name').all();
@@ -321,7 +318,7 @@ export default {
       }
 
       // ============================================
-      // EXISTING COUNSELING & MEETUPS
+      // COUNSELING & MEETUPS
       // ============================================
       if (path === '/api/counseling/book' && method === 'POST') {
         const token = getToken();
@@ -378,7 +375,7 @@ export default {
       }
 
       // ============================================
-      // EXISTING ADMIN API
+      // ADMIN API
       // ============================================
       if (path === '/api/admin/mentors' && method === 'POST') {
         const token = getToken();
@@ -441,10 +438,10 @@ export default {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        const { id, code, title, tagline, level, path: coursePath, weeks, price, hue, icon, summary, outcomes, skills, channel } = await request.json();
+        const { id, code, title, tagline, level, path: coursePath, weeks, price, priceUsd, hue, icon, summary, outcomes, skills, channel } = await request.json();
         const courseId = id || 'course_' + uid();
-        await env.DB.prepare(`INSERT INTO courses (id, code, title, tagline, level, path, weeks, price, hue, icon, summary, outcomes, skills, channel, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-          .bind(courseId, code, title, tagline, level, coursePath, weeks, price, hue, icon, summary, JSON.stringify(outcomes), JSON.stringify(skills), channel, Date.now()).run();
+        await env.DB.prepare(`INSERT INTO courses (id, code, title, tagline, level, path, weeks, price, price_usd, hue, icon, summary, outcomes, skills, channel, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .bind(courseId, code, title, tagline, level, coursePath, weeks, price, priceUsd || 0, hue, icon, summary, JSON.stringify(outcomes), JSON.stringify(skills), channel, Date.now()).run();
         return json({ data: { id: courseId } });
       }
 
@@ -457,7 +454,7 @@ export default {
         const fields = []; const values = [];
         for (const [key, val] of Object.entries(data)) {
           if (['outcomes', 'skills'].includes(key)) { fields.push(`${key} = ?`); values.push(JSON.stringify(val)); } 
-          else if (['code', 'title', 'tagline', 'level', 'path', 'weeks', 'price', 'hue', 'icon', 'summary', 'channel'].includes(key)) { fields.push(`${key} = ?`); values.push(val); }
+          else if (['code', 'title', 'tagline', 'level', 'path', 'weeks', 'price', 'price_usd', 'hue', 'icon', 'summary', 'channel'].includes(key)) { fields.push(`${key} = ?`); values.push(val); }
         }
         if (fields.length > 0) { values.push(courseId); await env.DB.prepare(`UPDATE courses SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run(); }
         return json({ success: true });
@@ -567,6 +564,55 @@ export default {
           return false;
         }).map(r => ({ ...r, metadata: r.metadata ? JSON.parse(r.metadata) : null }));
         return json({ data: filtered });
+      }
+
+      // ============================================
+      // NEW: DELETE MENTOR
+      // ============================================
+      if (path.startsWith('/api/admin/mentors/') && method === 'DELETE') {
+        const token = getToken();
+        const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
+        if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
+        const mentorId = path.split('/')[3];
+        await env.DB.prepare('DELETE FROM mentors WHERE id = ?').bind(mentorId).run();
+        return json({ success: true });
+      }
+
+      // ============================================
+      // NEW: DELETE COURSE
+      // ============================================
+      if (path.startsWith('/api/admin/courses/') && method === 'DELETE' && !path.includes('/modules') && !path.includes('/lessons') && !path.includes('/quiz')) {
+        const token = getToken();
+        const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
+        if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
+        const courseId = path.split('/')[3];
+        await env.DB.prepare('DELETE FROM courses WHERE id = ?').bind(courseId).run();
+        return json({ success: true });
+      }
+
+      // ============================================
+      // NEW: GET ALL USERS
+      // ============================================
+      if (path === '/api/admin/users' && method === 'GET') {
+        const token = getToken();
+        const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
+        if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
+        const users = await env.DB.prepare('SELECT id, name, email, role, telegram_id, joined_at FROM users ORDER BY joined_at DESC').all();
+        return json({ data: users.results });
+      }
+
+      // ============================================
+      // NEW: DELETE USER
+      // ============================================
+      if (path.startsWith('/api/admin/users/') && method === 'DELETE') {
+        const token = getToken();
+        const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
+        if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
+        const userId = path.split('/')[3];
+        if (userId === token) return error('Cannot delete yourself', 400);
+        
+        await env.DB.prepare('DELETE FROM users WHERE id = ?').bind(userId).run();
+        return json({ success: true });
       }
 
       return error('Not found', 404);

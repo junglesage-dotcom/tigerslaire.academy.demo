@@ -4,19 +4,20 @@ import { useStore } from "../lib/store";
 
 export default function AdminPanel() {
   const { user, go, toast } = useStore();
-  const [activeTab, setActiveTab] = useState<'applications' | 'payments' | 'mentors' | 'instructors' | 'courses'>('applications');
+  const [activeTab, setActiveTab] = useState<'applications' | 'payments' | 'mentors' | 'instructors' | 'courses' | 'users'>('applications');
   const [apps, setApps] = useState<any[]>([]);
-  const [payments, setPayments] = useState<any[]>([]); // ADDED
+  const [payments, setPayments] = useState<any[]>([]);
   const [mentors, setMentors] = useState<any[]>([]);
   const [instructors, setInstructors] = useState<any[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]); // ADDED
 
   // Form states
   const [newMentor, setNewMentor] = useState({ name: "", bio: "", specialties: "tech", hourlyRate: 0, imageUrl: "" });
   const [newInstructor, setNewInstructor] = useState({ name: "", bio: "", courseIds: [] as string[] });
   const [newCourse, setNewCourse] = useState({
     code: "", title: "", tagline: "", level: "Beginner", path: "Beginner → Intermediate",
-    weeks: 8, price: 0, hue: "#ffa41b", icon: "python", summary: "", outcomes: "", skills: "", channel: ""
+    weeks: 8, price: 0, priceUsd: 0, hue: "#ffa41b", icon: "python", summary: "", outcomes: "", skills: "", channel: ""
   });
 
   useEffect(() => {
@@ -30,18 +31,20 @@ export default function AdminPanel() {
 
   const loadAll = async () => {
     try {
-      const [appsRes, payRes, mentorsRes, instRes, coursesRes] = await Promise.all([
+      const [appsRes, payRes, mentorsRes, instRes, coursesRes, usersRes] = await Promise.all([
         api.getAllApplications(),
-        api.getPendingPayments(), // ADDED
+        api.getPendingPayments(),
         api.getMentors(),
         api.getInstructors(),
-        api.getCourses()
+        api.getCourses(),
+        api.getUsers() // ADDED
       ]);
       setApps(appsRes.data);
-      setPayments(payRes.data); // ADDED
+      setPayments(payRes.data);
       setMentors(mentorsRes.data);
       setInstructors(instRes.data);
       setCourses(coursesRes.data);
+      setUsers(usersRes.data); // ADDED
     } catch (e) {
       toast("Failed to load admin data");
     }
@@ -73,6 +76,17 @@ export default function AdminPanel() {
     }
   };
 
+  const handleDeleteMentor = async (id: string) => { // ADDED
+    if (!confirm("Are you sure you want to delete this mentor?")) return;
+    try {
+      await api.deleteMentor(id);
+      toast("Mentor deleted");
+      loadAll();
+    } catch (e: any) {
+      toast(e.message);
+    }
+  };
+
   const handleAddInstructor = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -84,6 +98,17 @@ export default function AdminPanel() {
       });
       toast("Instructor added");
       setNewInstructor({ name: "", bio: "", courseIds: [] });
+      loadAll();
+    } catch (e: any) {
+      toast(e.message);
+    }
+  };
+
+  const handleDeleteInstructor = async (id: string) => {
+    if (!confirm("Delete this instructor?")) return;
+    try {
+      await api.deleteInstructor(id);
+      toast("Instructor deleted");
       loadAll();
     } catch (e: any) {
       toast(e.message);
@@ -105,11 +130,22 @@ export default function AdminPanel() {
     }
   };
 
-  const handleDeleteInstructor = async (id: string) => {
-    if (!confirm("Delete this instructor?")) return;
+  const handleDeleteCourse = async (id: string) => { // ADDED
+    if (!confirm("Are you sure you want to delete this course? This cannot be undone.")) return;
     try {
-      await api.deleteInstructor(id);
-      toast("Instructor deleted");
+      await api.deleteCourse(id);
+      toast("Course deleted");
+      loadAll();
+    } catch (e: any) {
+      toast(e.message);
+    }
+  };
+
+  const handleDeleteUser = async (id: string) => { // ADDED
+    if (!confirm("Are you sure you want to delete this user? This will remove their account and data.")) return;
+    try {
+      await api.deleteUser(id);
+      toast("User deleted");
       loadAll();
     } catch (e: any) {
       toast(e.message);
@@ -118,10 +154,11 @@ export default function AdminPanel() {
 
   const tabs = [
     { id: 'applications', label: 'Applications', count: apps.filter(a => a.status === 'pending').length },
-    { id: 'payments', label: 'Payments', count: payments.filter(p => p.status === 'proof_submitted').length }, // UPDATED
+    { id: 'payments', label: 'Payments', count: payments.filter(p => p.status === 'proof_submitted').length },
     { id: 'mentors', label: 'Mentors', count: mentors.length },
     { id: 'instructors', label: 'Instructors', count: instructors.length },
     { id: 'courses', label: 'Courses', count: courses.length },
+    { id: 'users', label: 'Users', count: users.length }, // ADDED
   ] as const;
 
   return (
@@ -194,7 +231,9 @@ export default function AdminPanel() {
                 <div>
                   <p className="font-bold text-bone">{p.user_name} - {p.course_title || 'Mentorship'}</p>
                   <p className="text-xs text-smoke mt-1">Ref: {p.reference}</p>
-                  <p className="text-sm text-amber font-bold mt-2">₦{p.amount.toLocaleString()}</p>
+                  <p className="text-sm text-amber font-bold mt-2">
+                    {p.currency === 'USD' ? '$' : '₦'}{p.amount.toLocaleString()}
+                  </p>
                   {p.proof_url && (
                     <a href={p.proof_url} target="_blank" rel="noreferrer" className="inline-block mt-2 text-xs text-tgsky underline">
                       View Payment Slip
@@ -247,19 +286,22 @@ export default function AdminPanel() {
             <h2 className="font-display text-xl font-bold text-amber mb-4">Current Mentors</h2>
             <div className="space-y-3">
               {mentors.map(m => (
-                <div key={m.id} className="rounded border border-bone/5 bg-ink p-3 flex items-center gap-3">
-                  {m.image_url ? (
-                    <img src={m.image_url} alt={m.name} className="h-10 w-10 rounded-full object-cover" />
-                  ) : (
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber/20 text-amber font-bold">
-                      {m.name.charAt(0)}
+                <div key={m.id} className="rounded border border-bone/5 bg-ink p-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 flex-1">
+                    {m.image_url ? (
+                      <img src={m.image_url} alt={m.name} className="h-10 w-10 rounded-full object-cover" />
+                    ) : (
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber/20 text-amber font-bold">
+                        {m.name.charAt(0)}
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-bone truncate">{m.name}</p>
+                      <p className="text-xs text-smoke truncate">{m.specialties?.join(', ')}</p>
+                      <p className="text-xs text-amber mt-1">₦{m.hourly_rate?.toLocaleString()}/hr</p>
                     </div>
-                  )}
-                  <div className="flex-1">
-                    <p className="font-bold text-bone">{m.name}</p>
-                    <p className="text-xs text-smoke">{m.specialties?.join(', ')}</p>
-                    <p className="text-xs text-amber mt-1">₦{m.hourly_rate?.toLocaleString()}/hr</p>
                   </div>
+                  <button onClick={() => handleDeleteMentor(m.id)} className="shrink-0 text-xs text-alert hover:underline font-bold">Delete</button>
                 </div>
               ))}
             </div>
@@ -305,12 +347,12 @@ export default function AdminPanel() {
             <h2 className="font-display text-xl font-bold text-amber mb-4">Current Instructors</h2>
             <div className="space-y-3">
               {instructors.map(i => (
-                <div key={i.id} className="rounded border border-bone/5 bg-ink p-3 flex justify-between">
-                  <div>
-                    <p className="font-bold text-bone">{i.name}</p>
-                    <p className="text-xs text-smoke mt-1">{i.bio}</p>
+                <div key={i.id} className="rounded border border-bone/5 bg-ink p-3 flex justify-between items-center">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold text-bone truncate">{i.name}</p>
+                    <p className="text-xs text-smoke mt-1 truncate">{i.bio}</p>
                   </div>
-                  <button onClick={() => handleDeleteInstructor(i.id)} className="text-xs text-alert hover:underline">Delete</button>
+                  <button onClick={() => handleDeleteInstructor(i.id)} className="shrink-0 ml-2 text-xs text-alert hover:underline font-bold">Delete</button>
                 </div>
               ))}
             </div>
@@ -338,9 +380,13 @@ export default function AdminPanel() {
                   <option>Beginner</option><option>Intermediate</option><option>Advanced</option>
                 </select>
                 <input type="number" placeholder="Weeks" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
-                  value={newCourse.weeks} onChange={e => setNewCourse({...newCourse, weeks: parseInt(e.target.value)})} />
+                  value={newCourse.weeks} onChange={e => setNewCourse({...newCourse, weeks: parseInt(e.target.value) || 0})} />
                 <input type="number" placeholder="Price (₦)" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
-                  value={newCourse.price} onChange={e => setNewCourse({...newCourse, price: parseInt(e.target.value)})} />
+                  value={newCourse.price} onChange={e => setNewCourse({...newCourse, price: parseInt(e.target.value) || 0})} />
+              </div>
+              <div className="grid grid-cols-1 gap-3">
+                <input type="number" placeholder="Price ($ USD)" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
+                  value={newCourse.priceUsd} onChange={e => setNewCourse({...newCourse, priceUsd: parseInt(e.target.value) || 0})} />
               </div>
               <textarea required placeholder="Summary" rows={2} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
                 value={newCourse.summary} onChange={e => setNewCourse({...newCourse, summary: e.target.value})} />
@@ -358,19 +404,72 @@ export default function AdminPanel() {
             <div className="space-y-3">
               {courses.map(c => (
                 <div key={c.id} className="rounded border border-bone/5 bg-ink p-3 flex justify-between items-center">
-                  <div>
-                    <p className="font-bold text-bone">{c.code} - {c.title}</p>
-                    <p className="text-xs text-smoke">{c.weeks} weeks · ₦{c.price?.toLocaleString()}</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold text-bone truncate">{c.code} - {c.title}</p>
+                    <p className="text-xs text-smoke truncate">{c.weeks} weeks · ₦{c.price?.toLocaleString()}</p>
                   </div>
-                  <button
-                    onClick={() => go({ view: "course-editor", courseId: c.id } as any)}
-                    className="rounded bg-amber/20 px-3 py-1 text-xs font-bold text-amber hover:bg-amber/30"
-                  >
-                    Edit Content →
-                  </button>
+                  <div className="flex gap-2 shrink-0 ml-2">
+                    <button
+                      onClick={() => go({ view: "course-editor", courseId: c.id } as any)}
+                      className="rounded bg-amber/20 px-3 py-1 text-xs font-bold text-amber hover:bg-amber/30"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDeleteCourse(c.id)}
+                      className="rounded bg-alert/10 px-3 py-1 text-xs font-bold text-alert hover:bg-alert/20"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Users Tab (NEW) */}
+      {activeTab === 'users' && (
+        <div className="rounded-lg border border-bone/10 bg-coal p-6">
+          <h2 className="font-display text-xl font-bold text-amber mb-4">Registered Users ({users.length})</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="text-xs text-smoke uppercase border-b border-bone/10">
+                <tr>
+                  <th className="py-3 px-2">Name</th>
+                  <th className="py-3 px-2">Email</th>
+                  <th className="py-3 px-2">Role</th>
+                  <th className="py-3 px-2">Telegram</th>
+                  <th className="py-3 px-2 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map(u => (
+                  <tr key={u.id} className="border-b border-bone/5 hover:bg-ink/50">
+                    <td className="py-3 px-2 font-bold text-bone">{u.name}</td>
+                    <td className="py-3 px-2 text-smoke">{u.email}</td>
+                    <td className="py-3 px-2">
+                      <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase ${u.role === 'admin' ? 'bg-amber/20 text-amber' : 'bg-bone/5 text-bone'}`}>
+                        {u.role}
+                      </span>
+                    </td>
+                    <td className="py-3 px-2 text-smoke">{u.telegram_id ? 'Linked' : '-'}</td>
+                    <td className="py-3 px-2 text-right">
+                      {u.id !== user?.id && (
+                        <button 
+                          onClick={() => handleDeleteUser(u.id)}
+                          className="text-xs text-alert hover:underline font-bold"
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {users.length === 0 && <p className="text-sm text-smoke text-center py-8">No users found.</p>}
           </div>
         </div>
       )}

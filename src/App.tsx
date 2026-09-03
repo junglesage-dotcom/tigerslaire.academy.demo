@@ -226,7 +226,7 @@ function Footer() {
           </ul>
           
           <div className="mt-6 pt-6 border-t border-bone/10">
-            <a href="https://t.me/TigersLairBot" target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm text-tgsky hover:underline">
+            <a href="https://t.me/jsagebutlerbot" target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm text-tgsky hover:underline">
               <IconPlane className="h-4 w-4" /> @TigersLairBot
             </a>
             <p className="mt-2 text-xs text-smoke">support@tigerslair.academy</p>
