@@ -15,6 +15,11 @@ directory = "./dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 
+# Environment Variables for Live Payments and Telegram Verification
+[vars]
+PAYSTACK_SECRET_KEY = "sk_live_YOUR_ACTUAL_LIVE_PAYSTACK_SECRET_KEY_HERE"
+BOT_TOKEN = "8954408184:AAEQ5fXqqQDvVa6IkXOqGKUPhdkCGB471Eo"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "tigerslair-db"

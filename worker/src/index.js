@@ -1,4 +1,37 @@
 // worker/src/index.js
+
+// Helper to verify Telegram Web App initData cryptographically
+async function verifyTelegramInitData(initData, botToken) {
+  try {
+    const urlParams = new URLSearchParams(initData);
+    const hash = urlParams.get('hash');
+    urlParams.delete('hash');
+    
+    const sortedParams = Array.from(urlParams.entries()).sort(([a], [b]) => a.localeCompare(b));
+    const dataCheckString = sortedParams.map(([key, value]) => `${key}=${value}`).join('\n');
+    
+    const encoder = new TextEncoder();
+    const secretKey = await crypto.subtle.importKey(
+      'raw', encoder.encode('WebAppData'),
+      { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+    );
+    const secret = await crypto.subtle.sign('HMAC', secretKey, encoder.encode(botToken));
+    
+    const key = await crypto.subtle.importKey(
+      'raw', secret,
+      { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+    );
+    const computedHash = await crypto.subtle.sign('HMAC', key, encoder.encode(dataCheckString));
+    
+    const hashArray = Array.from(new Uint8Array(computedHash));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    
+    return hashHex === hash;
+  } catch (e) {
+    return false;
+  }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -23,14 +56,26 @@ export default {
 
     try {
       // ============================================
-      // PAYSTACK WEBHOOK (Must be first to avoid auth checks)
+      // PAYSTACK WEBHOOK (Secure Live Mode)
       // ============================================
       if (path === '/api/webhooks/paystack' && method === 'POST') {
-        const body = await request.json();
+        const bodyText = await request.text();
+        const signature = request.headers.get('x-paystack-signature');
         
-        // In production, verify the hash: 
-        // const hash = crypto.createHmac('sha512', env.PAYSTACK_SECRET_KEY).update(JSON.stringify(body)).digest('hex');
-        // if (hash !== request.headers.get('x-paystack-signature')) return error('Invalid signature', 400);
+        const encoder = new TextEncoder();
+        const key = await crypto.subtle.importKey(
+          'raw', encoder.encode(env.PAYSTACK_SECRET_KEY),
+          { name: 'HMAC', hash: 'SHA-512' }, false, ['sign']
+        );
+        const hashBuffer = await crypto.subtle.sign('HMAC', key, encoder.encode(bodyText));
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        
+        if (hashHex !== signature) {
+          return error('Invalid signature', 400);
+        }
+
+        const body = JSON.parse(bodyText);
 
         if (body.event === 'charge.success') {
           const data = body.data;
@@ -42,7 +87,6 @@ export default {
             await env.DB.prepare('UPDATE payments SET status = ?, paystack_ref = ?, updated_at = ? WHERE id = ?')
               .bind('paid', data.reference, Date.now(), payment.id).run();
             
-            // Fulfill the order
             if (payment.course_id) {
               await env.DB.prepare('INSERT OR IGNORE INTO enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, ?)')
                 .bind(payment.user_id, payment.course_id, Date.now()).run();
@@ -239,6 +283,32 @@ export default {
         if (!token) return error('Unauthorized', 401);
         const activity = await env.DB.prepare('SELECT * FROM activity_logs WHERE user_id = ? ORDER BY at DESC LIMIT 40').bind(token).all();
         return json({ data: activity.results });
+      }
+
+      // ============================================
+      // TELEGRAM API (Updated for Mini App)
+      // ============================================
+      if (path === '/api/telegram/link-mini-app' && method === 'POST') {
+        const token = getToken();
+        if (!token) return error('Unauthorized', 401);
+        const user = await env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(token).first();
+        if (!user) return error('User not found', 404);
+
+        const { initData } = await request.json();
+        if (!initData) return error('Missing initData', 400);
+
+        // Verify the cryptographic hash from Telegram
+        const isValid = await verifyTelegramInitData(initData, env.BOT_TOKEN);
+        if (!isValid) return error('Invalid Telegram data', 403);
+
+        const urlParams = new URLSearchParams(initData);
+        const userData = JSON.parse(urlParams.get('user') || '{}');
+        const telegramId = String(userData.id);
+
+        if (!telegramId) return error('No Telegram ID found', 400);
+
+        await env.DB.prepare('UPDATE users SET telegram_id = ? WHERE id = ?').bind(telegramId, user.id).run();
+        return json({ success: true, telegramId });
       }
 
       if (path === '/api/telegram/link' && method === 'POST') {
@@ -567,7 +637,7 @@ export default {
       }
 
       // ============================================
-      // NEW: DELETE MENTOR
+      // DELETE & USER MANAGEMENT
       // ============================================
       if (path.startsWith('/api/admin/mentors/') && method === 'DELETE') {
         const token = getToken();
@@ -578,9 +648,6 @@ export default {
         return json({ success: true });
       }
 
-      // ============================================
-      // NEW: DELETE COURSE
-      // ============================================
       if (path.startsWith('/api/admin/courses/') && method === 'DELETE' && !path.includes('/modules') && !path.includes('/lessons') && !path.includes('/quiz')) {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
@@ -590,9 +657,6 @@ export default {
         return json({ success: true });
       }
 
-      // ============================================
-      // NEW: GET ALL USERS
-      // ============================================
       if (path === '/api/admin/users' && method === 'GET') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
@@ -601,9 +665,6 @@ export default {
         return json({ data: users.results });
       }
 
-      // ============================================
-      // NEW: DELETE USER
-      // ============================================
       if (path.startsWith('/api/admin/users/') && method === 'DELETE') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();

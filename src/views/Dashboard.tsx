@@ -3,10 +3,13 @@ import { api } from "../lib/api";
 import { useStore } from "../lib/store";
 
 export default function Dashboard() {
-  const { user, go, toast, logout, isEnrolled, linkTelegram } = useStore();
+  const { user, go, toast, logout, isEnrolled, linkTelegram, unlinkTelegram } = useStore();
   const [enrollments, setEnrollments] = useState<any[]>([]);
   const [activity, setActivity] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Detect if we are inside the Telegram Mini App
+  const isTelegram = !!(window as any).Telegram?.WebApp?.initData;
 
   useEffect(() => {
     if (!user) return;
@@ -45,6 +48,18 @@ export default function Dashboard() {
     return enrollment.quiz_passed ? 100 : 50;
   };
 
+  const handleConnectClick = () => {
+    if (isTelegram) {
+      // One-click native linking
+      const initData = (window as any).Telegram.WebApp.initData;
+      linkTelegram(initData);
+    } else {
+      // Web fallback: Open the bot
+      window.open(`https://t.me/TigersLair_bot?start=link_${user.id}`, '_blank');
+      toast("Please start a chat with the bot to complete linking.");
+    }
+  };
+
   return (
     <div className="mx-auto max-w-7xl px-5 py-12 sm:px-8">
       {/* Header */}
@@ -68,16 +83,20 @@ export default function Dashboard() {
         <div className="mb-8 rounded-xl border border-tgsky/30 bg-tgsky/5 p-6">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
-              <h2 className="font-display text-xl font-bold text-bone mb-1">Connect Your Telegram Account</h2>
+              <h2 className="font-display text-xl font-bold text-bone mb-1">
+                {isTelegram ? "Connect this Telegram Account" : "Connect Your Telegram Account"}
+              </h2>
               <p className="text-sm text-smoke">
-                Link your Telegram to receive daily lesson drops, session reminders, and access the community bot.
+                {isTelegram 
+                  ? "Link your current Telegram profile instantly to receive daily lesson drops and access the community bot." 
+                  : "Link your Telegram to receive daily lesson drops, session reminders, and access the community bot."}
               </p>
             </div>
             <button
-              onClick={linkTelegram}
-              className="shrink-0 rounded-md bg-tgsky px-6 py-3 font-display text-sm font-extrabold uppercase tracking-widest text-ink hover:bg-tgsky/90"
+              onClick={handleConnectClick}
+              className="shrink-0 rounded-md bg-tgsky px-6 py-3 font-display text-sm font-extrabold uppercase tracking-widest text-ink hover:bg-tgsky/90 transition-colors"
             >
-              Connect Telegram
+              {isTelegram ? "Link Instantly" : "Open Telegram to Link"}
             </button>
           </div>
         </div>
@@ -194,6 +213,14 @@ export default function Dashboard() {
               >
                 Community Meetups →
               </button>
+              {user.telegram_id && (
+                <button
+                  onClick={unlinkTelegram}
+                  className="w-full rounded border border-alert/20 bg-ink p-3 text-left text-sm text-alert hover:border-alert"
+                >
+                  Unlink Telegram Account
+                </button>
+              )}
             </div>
           </div>
 

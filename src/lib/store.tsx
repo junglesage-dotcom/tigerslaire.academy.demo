@@ -59,7 +59,7 @@ interface StoreCtx {
   isEnrolled: (courseId: string) => boolean;
   completeLesson: (courseId: string, lessonId: string) => Promise<void>;
   submitQuiz: (courseId: string, score: number, total: number) => Promise<boolean>;
-  linkTelegram: () => Promise<void>;
+  linkTelegram: (initData?: string) => Promise<void>;
   unlinkTelegram: () => Promise<void>;
 }
 
@@ -131,7 +131,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const loginDemo = useCallback(async () => {
     try {
       const res = await api.loginDemo();
-      // Ensure token is saved
       if (res.token) {
         localStorage.setItem("tigerslair.token", res.token);
       }
@@ -190,10 +189,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [toast]);
 
-  const linkTelegram = useCallback(async () => {
+  // UPDATED: Handles both Mini App (initData) and Web fallback
+  const linkTelegram = useCallback(async (initData?: string) => {
     try {
-      const res = await api.linkTelegram();
-      toast("Telegram linked — the bot now knows you");
+      let res;
+      if (initData) {
+        res = await api.linkTelegramMiniApp(initData);
+        toast("Telegram linked securely via Mini App!");
+      } else {
+        // Fallback for web (generates a random ID for now)
+        const tgId = '78' + String(Math.floor(1000000 + Math.random() * 8999999));
+        res = await api.linkTelegram();
+        toast("Telegram linked!");
+      }
+      
       if (user) {
         setUser({ ...user, telegram_id: res.telegramId });
       }

@@ -1,7 +1,5 @@
 // src/lib/api.ts
 
-// Use the environment variable if it exists (for Cloudflare Pages deployment),
-// otherwise fall back to your actual deployed Worker URL for local development.
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) || 'https://tigerslair-academy.ehisferguson.workers.dev';
 
 function getToken(): string | null {
@@ -80,6 +78,11 @@ export const api = {
   getActivity: () => request<{ data: any[] }>('/api/activity'),
 
   // Telegram
+  linkTelegramMiniApp: (initData: string) =>
+    request<{ success: boolean; telegramId: string }>('/api/telegram/link-mini-app', {
+      method: 'POST', body: JSON.stringify({ initData })
+    }),
+  
   linkTelegram: () => request<{ telegramId: string }>('/api/telegram/link', { method: 'POST' }),
   unlinkTelegram: () => request<{ success: boolean }>('/api/telegram/unlink', { method: 'POST' }),
   getCommunity: () => request<{ data: any }>('/api/telegram/community'),
@@ -196,9 +199,7 @@ export const api = {
       method: 'POST', body: JSON.stringify({ filename, contentType })
     }),
 
-  // ==========================================
-  // PAYMENTS
-  // ==========================================
+  // Payments
   initiatePayment: (data: any) =>
     request<{ data: any }>('/api/payments/initiate', {
       method: 'POST', body: JSON.stringify(data)

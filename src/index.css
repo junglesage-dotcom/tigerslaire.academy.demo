@@ -27,8 +27,9 @@ html {
 }
 
 body {
-  background-color: var(--color-ink);
-  color: var(--color-bone);
+  /* Use Telegram's native background/text colors if opened as a Mini App, otherwise fallback to custom theme */
+  background-color: var(--tg-theme-bg-color, var(--color-ink));
+  color: var(--tg-theme-text-color, var(--color-bone));
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
