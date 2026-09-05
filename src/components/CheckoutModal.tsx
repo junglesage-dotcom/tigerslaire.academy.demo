@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { api } from "../lib/api";
 import { useStore } from "../lib/store";
 import { IconX } from "../components/Icons";
@@ -6,17 +6,32 @@ import { IconX } from "../components/Icons";
 interface CheckoutModalProps {
   courseId: string;
   amount: number;
+  ngnAmount: number; // Added to calculate max months accurately
   currency: 'NGN' | 'USD';
   courseTitle: string;
   onClose: () => void;
 }
 
-export default function CheckoutModal({ courseId, amount, currency, courseTitle, onClose }: CheckoutModalProps) {
+export default function CheckoutModal({ courseId, amount, ngnAmount, currency, courseTitle, onClose }: CheckoutModalProps) {
   const { user, toast, go } = useStore();
   const [method, setMethod] = useState<'card' | 'bank'>('card');
+  const [paymentType, setPaymentType] = useState<'full' | 'installment'>('full');
+  const [months, setMonths] = useState(2);
   const [loading, setLoading] = useState(false);
   const [paymentData, setPaymentData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Calculate max months based on NGN price tiers
+  const maxMonths = useMemo(() => {
+    if (ngnAmount > 100000) return 5;
+    if (ngnAmount > 60000) return 4;
+    if (ngnAmount > 30000) return 3;
+    if (ngnAmount > 10000) return 2;
+    return 1;
+  }, [ngnAmount]);
+
+  const monthlyAmount = paymentType === 'installment' ? Math.ceil(amount / months) : amount;
+  const currencySymbol = currency === 'NGN' ? '₦' : '$';
 
   const handleInitiate = async () => {
     if (!user) {
@@ -30,20 +45,21 @@ export default function CheckoutModal({ courseId, amount, currency, courseTitle,
     try {
       const res = await api.initiatePayment({
         courseId,
-        amount,
+        amount: monthlyAmount, // For installments, this is the first month's amount
         method,
-        currency
+        currency,
+        paymentPlan: paymentType,
+        months: paymentType === 'installment' ? months : 1
       });
       
       setPaymentData(res.data);
       
       if (method === 'card') {
-        // Paystack Integration
         const handler = (window as any).PaystackPop.setup({
-          key: 'pk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', // REPLACE WITH YOUR PAYSTACK PUBLIC KEY
+          key: 'pk_live_YOUR_ACTUAL_LIVE_PUBLIC_KEY_HERE',
           email: user.email,
-          amount: amount * 100, // Paystack expects amount in kobo/cents
-          currency: currency, // Dynamically set to 'NGN' or 'USD'
+          amount: monthlyAmount * 100,
+          currency: currency,
           reference: res.data.reference,
           onClose: () => {
             toast("Payment window closed");
@@ -66,16 +82,19 @@ export default function CheckoutModal({ courseId, amount, currency, courseTitle,
   };
 
   const handleBankTransferComplete = () => {
-    // Opens Telegram to send proof
-    const botUsername = "jsagebutlerbot";
-    window.open(`https://t.me/${botUsername}?start=PROOF_${paymentData.reference}`, '_blank');
+    const botUsername = "jsagebutlerbot"; // Replace with your actual bot username
+    const deepLink = paymentType === 'installment' && paymentData 
+      ? `https://t.me/${botUsername}?start=INST_PROOF_${paymentData.reference}` 
+      : `https://t.me/${botUsername}?start=PROOF_${paymentData.reference}`;
+      
+    window.open(deepLink, '_blank');
     toast("Please send your payment slip to the bot.");
     onClose();
   };
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/90 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl border border-bone/10 bg-coal p-8 relative">
+      <div className="w-full max-w-md rounded-2xl border border-bone/10 bg-coal p-8 relative max-h-[90vh] overflow-y-auto">
         <button onClick={onClose} className="absolute top-4 right-4 text-smoke hover:text-bone">
           <IconX className="h-5 w-5" />
         </button>
@@ -83,7 +102,49 @@ export default function CheckoutModal({ courseId, amount, currency, courseTitle,
         <h3 className="font-display text-2xl font-bold text-bone mb-2">Checkout</h3>
         <p className="text-sm text-smoke mb-6">{courseTitle}</p>
 
-        {/* Payment Method Toggle */}
+        {/* Payment Type Toggle (Full vs Installment) */}
+        {maxMonths > 1 && (
+          <div className="mb-4 flex gap-2 p-1 rounded-lg bg-ink border border-bone/10">
+            <button
+              onClick={() => { setPaymentType('full'); setPaymentData(null); }}
+              className={`flex-1 py-2 text-xs font-bold uppercase tracking-widest rounded-md transition-colors ${
+                paymentType === 'full' ? 'bg-amber text-ink' : 'text-smoke hover:text-bone'
+              }`}
+            >
+              Pay in Full
+            </button>
+            <button
+              onClick={() => { setPaymentType('installment'); setPaymentData(null); }}
+              className={`flex-1 py-2 text-xs font-bold uppercase tracking-widest rounded-md transition-colors ${
+                paymentType === 'installment' ? 'bg-amber text-ink' : 'text-smoke hover:text-bone'
+              }`}
+            >
+              Installments (Max {maxMonths} mos)
+            </button>
+          </div>
+        )}
+
+        {/* Installment Month Selector */}
+        {paymentType === 'installment' && maxMonths > 1 && (
+          <div className="mb-4">
+            <label className="text-xs text-smoke uppercase tracking-widest mb-2 block">
+              Select Duration: {months} Month{months > 1 ? 's' : ''}
+            </label>
+            <input
+              type="range"
+              min="2"
+              max={maxMonths}
+              value={months}
+              onChange={(e) => setMonths(parseInt(e.target.value))}
+              className="w-full accent-amber"
+            />
+            <p className="text-xs text-amber mt-1">
+              {currencySymbol}{monthlyAmount.toLocaleString()} / month
+            </p>
+          </div>
+        )}
+
+        {/* Payment Method Toggle (Card vs Bank) */}
         <div className="mb-6 flex gap-2 p-1 rounded-lg bg-ink border border-bone/10">
           <button
             onClick={() => { setMethod('card'); setPaymentData(null); setError(null); }}
@@ -104,10 +165,17 @@ export default function CheckoutModal({ courseId, amount, currency, courseTitle,
         </div>
 
         <div className="mb-6 text-center">
-          <p className="text-xs text-smoke uppercase tracking-widest mb-1">Total Amount</p>
-          <p className="font-display text-4xl font-extrabold text-amber">
-            {currency === 'NGN' ? '₦' : '$'}{amount.toLocaleString()}
+          <p className="text-xs text-smoke uppercase tracking-widest mb-1">
+            {paymentType === 'installment' ? 'First Installment Amount' : 'Total Amount'}
           </p>
+          <p className="font-display text-4xl font-extrabold text-amber">
+            {currencySymbol}{monthlyAmount.toLocaleString()}
+          </p>
+          {paymentType === 'installment' && (
+            <p className="text-xs text-smoke mt-1">
+              Remaining balance will be charged monthly.
+            </p>
+          )}
         </div>
 
         {/* Error Message */}
@@ -140,7 +208,7 @@ export default function CheckoutModal({ courseId, amount, currency, courseTitle,
                 <div className="mt-2 p-2 rounded bg-tgsky/10 border border-tgsky/20">
                   <p className="text-[10px] text-tgsky font-bold uppercase">Note for International Students</p>
                   <p className="text-xs text-smoke mt-1">
-                    Please use a service like Wise, Sendwave, or your local bank's international transfer to send USD. 
+                    Please use a service like Wise, Sendwave, or your local bank's international transfer. 
                     Include your reference code in the transfer narration.
                   </p>
                 </div>
@@ -183,7 +251,7 @@ export default function CheckoutModal({ courseId, amount, currency, courseTitle,
             ) : method === 'bank' ? (
               "Get Bank Details"
             ) : (
-              `Pay ${currency === 'NGN' ? '₦' : '$'}${amount.toLocaleString()} with Card`
+              `Pay ${currencySymbol}${monthlyAmount.toLocaleString()} with Card`
             )}
           </button>
         )}

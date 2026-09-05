@@ -791,16 +791,16 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
         </div>
       )}
 
-      {/* Checkout Modal */}
+            {/* Checkout Modal */}
       {showCheckout && (
         <CheckoutModal 
           courseId={courseId} 
           amount={activePrice} 
+          ngnAmount={course.price} // <-- THIS WAS MISSING
           currency={currency}
           courseTitle={course.title} 
           onClose={() => setShowCheckout(false)} 
         />
-      )}
-    </div>
+      )}    </div>
   );
 }

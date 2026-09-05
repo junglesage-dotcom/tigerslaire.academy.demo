@@ -1,5 +1,4 @@
 // src/lib/api.ts
-
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) || 'https://tigerslair-academy.ehisferguson.workers.dev';
 
 function getToken(): string | null {
@@ -29,11 +28,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  // Courses
   getCourses: () => request<{ data: any[] }>('/api/courses'),
   getCourse: (id: string) => request<{ data: any }>(`/api/courses/${id}`),
 
-  // Auth
   register: (name: string, email: string) =>
     request<{ data: any; token: string }>('/api/auth/register', {
       method: 'POST', body: JSON.stringify({ name, email })
@@ -55,29 +52,24 @@ export const api = {
 
   getMe: () => request<{ data: any }>('/api/user/me'),
 
-  // Enrollments
   enroll: (courseId: string) =>
     request<{ success: boolean }>('/api/enroll', {
       method: 'POST', body: JSON.stringify({ courseId })
     }),
   getEnrollments: () => request<{ data: any[] }>('/api/enrollments'),
 
-  // Lessons
   completeLesson: (courseId: string, lessonId: string) =>
     request<{ success: boolean }>('/api/lessons/complete', {
       method: 'POST', body: JSON.stringify({ courseId, lessonId })
     }),
 
-  // Quiz
   submitQuiz: (courseId: string, score: number, total: number) =>
     request<{ passed: boolean }>('/api/quiz/submit', {
       method: 'POST', body: JSON.stringify({ courseId, score, total })
     }),
 
-  // Activity
   getActivity: () => request<{ data: any[] }>('/api/activity'),
 
-  // Telegram
   linkTelegramMiniApp: (initData: string) =>
     request<{ success: boolean; telegramId: string }>('/api/telegram/link-mini-app', {
       method: 'POST', body: JSON.stringify({ initData })
@@ -87,7 +79,6 @@ export const api = {
   unlinkTelegram: () => request<{ success: boolean }>('/api/telegram/unlink', { method: 'POST' }),
   getCommunity: () => request<{ data: any }>('/api/telegram/community'),
 
-  // Mentorship
   getCategories: () => request<{ data: any[] }>('/api/mentorship/categories'),
   getMentors: () => request<{ data: any[] }>('/api/mentors'),
   applyMentorship: (data: any) =>
@@ -98,14 +89,12 @@ export const api = {
   agreeToProposal: (appId: string) =>
     request<{ success: boolean }>(`/api/mentorship/application/${appId}/agree`, { method: 'PUT' }),
 
-  // Counseling
   bookCounseling: (data: any) =>
     request<{ data: any }>('/api/counseling/book', {
       method: 'POST', body: JSON.stringify(data)
     }),
   getMySessions: () => request<{ data: any[] }>('/api/counseling/my-sessions'),
 
-  // Meetups
   getMeetups: () => request<{ data: any[] }>('/api/meetups'),
   createMeetup: (data: any) =>
     request<{ data: any }>('/api/meetups', {
@@ -117,7 +106,6 @@ export const api = {
     }),
   getMyRsvps: () => request<{ data: any[] }>('/api/meetups/my-rsvps'),
 
-  // Admin
   addMentor: (data: any) =>
     request<{ data: any }>('/api/admin/mentors', {
       method: 'POST', body: JSON.stringify(data)
@@ -146,12 +134,10 @@ export const api = {
       method: 'PUT', body: JSON.stringify({ price, mentorId, firstSessionDate, notes })
     }),
 
-  // Admin: Users
   getUsers: () => request<{ data: any[] }>('/api/admin/users'),
   deleteUser: (id: string) =>
     request<{ success: boolean }>(`/api/admin/users/${id}`, { method: 'DELETE' }),
 
-  // Admin: Courses
   createCourse: (data: any) =>
     request<{ data: any }>('/api/admin/courses', {
       method: 'POST', body: JSON.stringify(data)
@@ -181,7 +167,6 @@ export const api = {
       method: 'POST', body: JSON.stringify(data)
     }),
 
-  // Resources
   getResources: (courseId: string, lessonId: string) =>
     request<{ data: any[] }>(`/api/courses/${courseId}/lessons/${lessonId}/resources`),
   createResource: (data: any) =>
@@ -199,7 +184,6 @@ export const api = {
       method: 'POST', body: JSON.stringify({ filename, contentType })
     }),
 
-  // Payments
   initiatePayment: (data: any) =>
     request<{ data: any }>('/api/payments/initiate', {
       method: 'POST', body: JSON.stringify(data)
@@ -211,9 +195,22 @@ export const api = {
     }),
 
   getPendingPayments: () => request<{ data: any[] }>('/api/admin/payments'),
-
   approvePayment: (reference: string) =>
     request<{ success: boolean }>('/api/payments/approve', {
       method: 'POST', body: JSON.stringify({ reference, adminToken: getToken() })
+    }),
+
+  // Installments
+  getMyInstallments: () => request<{ data: any[] }>('/api/installments/my'),
+  submitInstallmentProof: (installmentId: string, proofUrl: string) =>
+    request<{ success: boolean }>('/api/installments/submit-proof', {
+      method: 'POST', body: JSON.stringify({ installmentId, proofUrl })
+    }),
+
+  // Admin: Installments
+  getAdminInstallments: () => request<{ data: any[] }>('/api/admin/installments'),
+  approveInstallment: (installmentId: string) =>
+    request<{ success: boolean }>('/api/installments/approve', {
+      method: 'POST', body: JSON.stringify({ installmentId, adminToken: getToken() })
     }),
 };

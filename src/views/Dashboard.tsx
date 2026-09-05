@@ -6,9 +6,9 @@ export default function Dashboard() {
   const { user, go, toast, logout, isEnrolled, linkTelegram, unlinkTelegram } = useStore();
   const [enrollments, setEnrollments] = useState<any[]>([]);
   const [activity, setActivity] = useState<any[]>([]);
+  const [installments, setInstallments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Detect if we are inside the Telegram Mini App
   const isTelegram = !!(window as any).Telegram?.WebApp?.initData;
 
   useEffect(() => {
@@ -16,10 +16,12 @@ export default function Dashboard() {
     
     Promise.all([
       api.getEnrollments(),
-      api.getActivity()
-    ]).then(([enrollRes, actRes]) => {
+      api.getActivity(),
+      api.getMyInstallments()
+    ]).then(([enrollRes, actRes, instRes]) => {
       setEnrollments(enrollRes.data);
       setActivity(actRes.data);
+      setInstallments(instRes.data);
     }).catch(err => {
       toast("Failed to load dashboard data");
     }).finally(() => setLoading(false));
@@ -50,19 +52,23 @@ export default function Dashboard() {
 
   const handleConnectClick = () => {
     if (isTelegram) {
-      // One-click native linking
       const initData = (window as any).Telegram.WebApp.initData;
       linkTelegram(initData);
     } else {
-      // Web fallback: Open the bot
       window.open(`https://t.me/TigersLair_bot?start=link_${user.id}`, '_blank');
       toast("Please start a chat with the bot to complete linking.");
     }
   };
 
+  // UPDATED: Opens bot with specific ID and instructs user on caption
+  const handleInstallmentProof = (instId: string) => {
+    const botUsername = "TigersLair_bot";
+    window.open(`https://t.me/${botUsername}?start=INST_${instId}`, '_blank');
+    toast(`Bot opened. Please send your payment slip with caption: INST-${instId}`);
+  };
+
   return (
     <div className="mx-auto max-w-7xl px-5 py-12 sm:px-8">
-      {/* Header */}
       <div className="mb-8 flex items-center justify-between">
         <div>
           <h1 className="font-display text-3xl font-extrabold text-bone">Welcome back, {user.name.split(" ")[0]}</h1>
@@ -78,7 +84,6 @@ export default function Dashboard() {
         </button>
       </div>
 
-      {/* Telegram Connection Card */}
       {!user.telegram_id && (
         <div className="mb-8 rounded-xl border border-tgsky/30 bg-tgsky/5 p-6">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -102,7 +107,40 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Stats Grid */}
+      {/* Pending Installments Widget */}
+      {installments.length > 0 && (
+        <div className="mb-8 rounded-xl border border-amber/30 bg-amber/5 p-6">
+          <h2 className="font-display text-xl font-bold text-amber mb-4">⚠️ Pending Installments</h2>
+          <div className="space-y-3">
+            {installments.map((inst) => (
+              <div key={inst.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-lg border border-amber/10 bg-coal p-4">
+                <div>
+                  <p className="font-bold text-bone">{inst.course_title || 'Course Installment'}</p>
+                  <p className="text-sm text-smoke">
+                    Due: {new Date(inst.due_date).toLocaleDateString()} • Status: <span className="text-amber font-bold capitalize">{inst.status.replace('_', ' ')}</span>
+                  </p>
+                  <p className="font-display text-lg font-bold text-amber mt-1">₦{inst.amount.toLocaleString()}</p>
+                  <p className="text-[10px] text-smoke mt-1 font-mono">ID: INST-{inst.id}</p>
+                </div>
+                {inst.status === 'pending' && (
+                  <button
+                    onClick={() => handleInstallmentProof(inst.id)}
+                    className="shrink-0 rounded-md bg-amber px-4 py-2 text-xs font-bold uppercase tracking-widest text-ink hover:bg-amber/90"
+                  >
+                    Upload Proof
+                  </button>
+                )}
+                {inst.status === 'proof_submitted' && (
+                  <span className="shrink-0 rounded-md bg-mint/20 px-4 py-2 text-xs font-bold uppercase tracking-widest text-mint">
+                    Awaiting Admin Approval
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-lg border border-bone/10 bg-coal p-5">
           <p className="text-xs font-bold uppercase tracking-widest text-smoke">Courses</p>
@@ -127,7 +165,6 @@ export default function Dashboard() {
       </div>
 
       <div className="grid gap-8 lg:grid-cols-3">
-        {/* Enrolled Courses */}
         <div className="lg:col-span-2 rounded-lg border border-bone/10 bg-coal p-6">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="font-display text-xl font-bold text-amber">My Courses</h2>
@@ -183,9 +220,7 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Right Sidebar */}
         <div className="space-y-6">
-          {/* Quick Actions */}
           <div className="rounded-lg border border-bone/10 bg-coal p-6">
             <h2 className="font-display text-lg font-bold text-amber mb-4">Quick Actions</h2>
             <div className="space-y-2">
@@ -194,12 +229,6 @@ export default function Dashboard() {
                 className="w-full rounded border border-bone/5 bg-ink p-3 text-left text-sm text-bone hover:border-amber/30"
               >
                 Apply for Mentorship →
-              </button>
-              <button
-                onClick={() => go({ view: "mentorship-dashboard" })}
-                className="w-full rounded border border-bone/5 bg-ink p-3 text-left text-sm text-bone hover:border-amber/30"
-              >
-                View Mentorship Dashboard →
               </button>
               <button
                 onClick={() => go({ view: "counseling" })}
@@ -224,7 +253,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Recent Activity */}
           <div className="rounded-lg border border-bone/10 bg-coal p-6">
             <h2 className="font-display text-lg font-bold text-amber mb-4">Recent Activity</h2>
             {activity.length === 0 ? (

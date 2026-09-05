@@ -3,22 +3,18 @@ main = "worker/src/index.js"
 compatibility_date = "2026-08-26"
 compatibility_flags = ["nodejs_compat"]
 
-# Bundle the Vite-built frontend (dist/) into the Worker so the same
-# `tigerslair-academy.ehisferguson.workers.dev` host serves both
-# /api/* routes and the static SPA at every other path.
-#
-# `not_found_handling = "single-page-application"` makes Cloudflare
-# automatically serve index.html for any URL that doesn't match a file
-# in dist/ — so React Router can handle /admin, /dashboard, etc.
 [assets]
 directory = "./dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 
-# Environment Variables for Live Payments and Telegram Verification
 [vars]
 PAYSTACK_SECRET_KEY = "sk_live_YOUR_ACTUAL_LIVE_PAYSTACK_SECRET_KEY_HERE"
 BOT_TOKEN = "8954408184:AAEQ5fXqqQDvVa6IkXOqGKUPhdkCGB471Eo"
+
+# Run the scheduled function once a day at 2:00 AM UTC (3:00 AM WAT)
+[triggers]
+crons = ["0 2 * * *"]
 
 [[d1_databases]]
 binding = "DB"

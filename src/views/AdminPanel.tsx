@@ -4,13 +4,14 @@ import { useStore } from "../lib/store";
 
 export default function AdminPanel() {
   const { user, go, toast } = useStore();
-  const [activeTab, setActiveTab] = useState<'applications' | 'payments' | 'mentors' | 'instructors' | 'courses' | 'users'>('applications');
+  const [activeTab, setActiveTab] = useState<'applications' | 'payments' | 'installments' | 'mentors' | 'instructors' | 'courses' | 'users'>('applications');
   const [apps, setApps] = useState<any[]>([]);
   const [payments, setPayments] = useState<any[]>([]);
+  const [installments, setInstallments] = useState<any[]>([]); // ADDED
   const [mentors, setMentors] = useState<any[]>([]);
   const [instructors, setInstructors] = useState<any[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
-  const [users, setUsers] = useState<any[]>([]); // ADDED
+  const [users, setUsers] = useState<any[]>([]);
 
   // Form states
   const [newMentor, setNewMentor] = useState({ name: "", bio: "", specialties: "tech", hourlyRate: 0, imageUrl: "" });
@@ -31,20 +32,22 @@ export default function AdminPanel() {
 
   const loadAll = async () => {
     try {
-      const [appsRes, payRes, mentorsRes, instRes, coursesRes, usersRes] = await Promise.all([
+      const [appsRes, payRes, adminInstallmentsRes, mentorsRes, instructorsRes, coursesRes, usersRes] = await Promise.all([
         api.getAllApplications(),
         api.getPendingPayments(),
+        api.getAdminInstallments(), // ADDED
         api.getMentors(),
         api.getInstructors(),
         api.getCourses(),
-        api.getUsers() // ADDED
+        api.getUsers()
       ]);
       setApps(appsRes.data);
       setPayments(payRes.data);
+      setInstallments(adminInstallmentsRes.data); // ADDED
       setMentors(mentorsRes.data);
-      setInstructors(instRes.data);
+      setInstructors(instructorsRes.data);
       setCourses(coursesRes.data);
-      setUsers(usersRes.data); // ADDED
+      setUsers(usersRes.data);
     } catch (e) {
       toast("Failed to load admin data");
     }
@@ -76,7 +79,7 @@ export default function AdminPanel() {
     }
   };
 
-  const handleDeleteMentor = async (id: string) => { // ADDED
+  const handleDeleteMentor = async (id: string) => {
     if (!confirm("Are you sure you want to delete this mentor?")) return;
     try {
       await api.deleteMentor(id);
@@ -130,7 +133,7 @@ export default function AdminPanel() {
     }
   };
 
-  const handleDeleteCourse = async (id: string) => { // ADDED
+  const handleDeleteCourse = async (id: string) => {
     if (!confirm("Are you sure you want to delete this course? This cannot be undone.")) return;
     try {
       await api.deleteCourse(id);
@@ -141,7 +144,7 @@ export default function AdminPanel() {
     }
   };
 
-  const handleDeleteUser = async (id: string) => { // ADDED
+  const handleDeleteUser = async (id: string) => {
     if (!confirm("Are you sure you want to delete this user? This will remove their account and data.")) return;
     try {
       await api.deleteUser(id);
@@ -155,10 +158,11 @@ export default function AdminPanel() {
   const tabs = [
     { id: 'applications', label: 'Applications', count: apps.filter(a => a.status === 'pending').length },
     { id: 'payments', label: 'Payments', count: payments.filter(p => p.status === 'proof_submitted').length },
+    { id: 'installments', label: 'Installments', count: installments.length }, // ADDED
     { id: 'mentors', label: 'Mentors', count: mentors.length },
     { id: 'instructors', label: 'Instructors', count: instructors.length },
     { id: 'courses', label: 'Courses', count: courses.length },
-    { id: 'users', label: 'Users', count: users.length }, // ADDED
+    { id: 'users', label: 'Users', count: users.length },
   ] as const;
 
   return (
@@ -258,6 +262,46 @@ export default function AdminPanel() {
             ))}
             {payments.filter(p => p.status === 'proof_submitted').length === 0 && (
               <p className="text-sm text-smoke text-center py-8">No pending bank transfer proofs to review.</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Installments Tab (NEW) */}
+      {activeTab === 'installments' && (
+        <div className="rounded-lg border border-bone/10 bg-coal p-6">
+          <h2 className="font-display text-xl font-bold text-amber mb-4">Pending Installment Proofs</h2>
+          <div className="space-y-4">
+            {installments.map((inst) => (
+              <div key={inst.id} className="rounded border border-bone/5 bg-ink p-4 flex flex-col sm:flex-row justify-between gap-4">
+                <div>
+                  <p className="font-bold text-bone">{inst.user_name} - {inst.course_title || 'Course Installment'}</p>
+                  <p className="text-xs text-smoke mt-1">Installment ID: {inst.id}</p>
+                  <p className="text-sm text-amber font-bold mt-2">₦{inst.amount.toLocaleString()}</p>
+                  {inst.proof_url && (
+                    <a href={inst.proof_url} target="_blank" rel="noreferrer" className="inline-block mt-2 text-xs text-tgsky underline">
+                      View Payment Slip
+                    </a>
+                  )}
+                </div>
+                <button
+                  onClick={async () => {
+                    try {
+                      await api.approveInstallment(inst.id);
+                      toast("Installment approved!");
+                      loadAll();
+                    } catch (e: any) {
+                      toast(e.message);
+                    }
+                  }}
+                  className="self-start rounded bg-mint px-6 py-2 text-xs font-bold uppercase text-ink hover:bg-mint/90"
+                >
+                  Approve & Continue Access
+                </button>
+              </div>
+            ))}
+            {installments.length === 0 && (
+              <p className="text-sm text-smoke text-center py-8">No pending installment proofs to review.</p>
             )}
           </div>
         </div>
@@ -429,7 +473,7 @@ export default function AdminPanel() {
         </div>
       )}
 
-      {/* Users Tab (NEW) */}
+      {/* Users Tab */}
       {activeTab === 'users' && (
         <div className="rounded-lg border border-bone/10 bg-coal p-6">
           <h2 className="font-display text-xl font-bold text-amber mb-4">Registered Users ({users.length})</h2>

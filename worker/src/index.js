@@ -97,19 +97,31 @@ export default {
       }
 
       // ============================================
-      // PAYMENTS API
+      // PAYMENTS API (Updated for Installments)
       // ============================================
       if (path === '/api/payments/initiate' && method === 'POST') {
         const token = getToken();
         if (!token) return error('Unauthorized', 401);
         
-        const { courseId, mentorshipAppId, amount, method, currency } = await request.json();
+        const { courseId, mentorshipAppId, amount, method, currency, paymentPlan, months } = await request.json();
         const reference = 'TL-' + Date.now() + '-' + uid();
+        const now = Date.now();
         
-        await env.DB.prepare('INSERT INTO payments (id, user_id, course_id, mentorship_app_id, amount, method, currency, reference, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-          .bind(reference, token, courseId || null, mentorshipAppId || null, amount, method, currency || 'NGN', reference, Date.now(), Date.now()).run();
+        await env.DB.prepare('INSERT INTO payments (id, user_id, course_id, mentorship_app_id, amount, method, currency, payment_plan, reference, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+          .bind(reference, token, courseId || null, mentorshipAppId || null, amount, method, currency || 'NGN', paymentPlan || 'full', reference, now, now).run();
         
-        return json({ data: { reference, amount, currency: currency || 'NGN' } });
+        // If installment, create installment records
+        if (paymentPlan === 'installment' && months > 1) {
+          const monthlyAmount = Math.ceil(amount / months);
+          for (let i = 1; i <= months; i++) {
+            const instId = 'inst_' + uid();
+            const dueDate = now + (i * 30 * 24 * 60 * 60 * 1000); // Add i months
+            await env.DB.prepare('INSERT INTO installments (id, payment_id, user_id, course_id, amount, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+              .bind(instId, reference, token, courseId || null, monthlyAmount, dueDate, now).run();
+          }
+        }
+        
+        return json({ data: { reference, amount, currency: currency || 'NGN', paymentPlan, months } });
       }
 
       if (path === '/api/payments/submit-proof' && method === 'POST') {
@@ -141,6 +153,76 @@ export default {
         }
         
         return json({ success: true });
+      }
+
+      // ============================================
+      // INSTALLMENTS API
+      // ============================================
+      if (path === '/api/installments/my' && method === 'GET') {
+        const token = getToken();
+        if (!token) return error('Unauthorized', 401);
+        
+        const installments = await env.DB.prepare(`
+          SELECT i.*, c.title as course_title 
+          FROM installments i 
+          LEFT JOIN courses c ON i.course_id = c.id 
+          WHERE i.user_id = ? AND i.status != 'paid'
+          ORDER BY i.due_date ASC
+        `).bind(token).all();
+        
+        return json({ data: installments.results });
+      }
+
+      if (path === '/api/installments/submit-proof' && method === 'POST') {
+        const token = getToken();
+        if (!token) return error('Unauthorized', 401);
+        
+        const { installmentId, proofUrl } = await request.json();
+        await env.DB.prepare('UPDATE installments SET status = ?, proof_url = ? WHERE id = ? AND user_id = ?')
+          .bind('proof_submitted', proofUrl, installmentId, token).run();
+        
+        return json({ success: true });
+      }
+
+      if (path === '/api/installments/approve' && method === 'POST') {
+        const { installmentId, adminToken } = await request.json();
+        const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(adminToken).first();
+        if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
+
+        const inst = await env.DB.prepare('SELECT * FROM installments WHERE id = ?').bind(installmentId).first();
+        if (!inst) return error('Installment not found', 404);
+
+        await env.DB.prepare('UPDATE installments SET status = ? WHERE id = ?').bind('paid', installmentId).run();
+        
+        // Check if all installments for this payment are paid
+        const pendingCount = await env.DB.prepare('SELECT COUNT(*) as count FROM installments WHERE payment_id = ? AND status != ?', inst.payment_id, 'paid').first();
+        if (pendingCount.count === 0) {
+          await env.DB.prepare('UPDATE payments SET status = ? WHERE id = ?').bind('paid', inst.payment_id).run();
+          if (inst.course_id) {
+             await env.DB.prepare('INSERT OR IGNORE INTO enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, ?)').bind(inst.user_id, inst.course_id, Date.now()).run();
+          }
+        }
+        
+        return json({ success: true });
+      }
+
+      // ============================================
+      // ADMIN: INSTALLMENTS API (NEW)
+      // ============================================
+      if (path === '/api/admin/installments' && method === 'GET') {
+        const token = getToken();
+        const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
+        if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
+        
+        const installments = await env.DB.prepare(`
+          SELECT i.*, u.name as user_name, u.email as user_email, c.title as course_title 
+          FROM installments i 
+          JOIN users u ON i.user_id = u.id 
+          LEFT JOIN courses c ON i.course_id = c.id 
+          WHERE i.status = 'proof_submitted'
+          ORDER BY i.created_at DESC
+        `).all();
+        return json({ data: installments.results });
       }
 
       if (path === '/api/admin/payments' && method === 'GET') {
@@ -286,7 +368,7 @@ export default {
       }
 
       // ============================================
-      // TELEGRAM API (Updated for Mini App)
+      // TELEGRAM API
       // ============================================
       if (path === '/api/telegram/link-mini-app' && method === 'POST') {
         const token = getToken();
@@ -297,7 +379,6 @@ export default {
         const { initData } = await request.json();
         if (!initData) return error('Missing initData', 400);
 
-        // Verify the cryptographic hash from Telegram
         const isValid = await verifyTelegramInitData(initData, env.BOT_TOKEN);
         if (!isValid) return error('Invalid Telegram data', 403);
 
@@ -679,6 +760,40 @@ export default {
       return error('Not found', 404);
     } catch (err) {
       return error(err.message, 500);
+    }
+  },
+
+  // ============================================
+  // SCHEDULED CRON JOB (Daily Installment Reminders)
+  // ============================================
+  async scheduled(event, env) {
+    const now = Date.now();
+    // Find pending installments that are due and haven't been reminded yet
+    const pending = await env.DB.prepare(`
+      SELECT i.*, u.name, u.telegram_id, c.title as course_title
+      FROM installments i 
+      JOIN users u ON i.user_id = u.id 
+      LEFT JOIN courses c ON i.course_id = c.id
+      WHERE i.due_date <= ? AND i.status = 'pending' AND i.reminder_sent = 0
+    `).bind(now).all();
+    
+    for (const inst of pending.results) {
+      if (inst.telegram_id) {
+        const amount = inst.amount.toLocaleString();
+        const message = `🐯 Hello ${inst.name},\n\nYour installment of ₦${amount} for *${inst.course_title || 'your course'}* is now due.\n\nPlease complete the payment to continue your learning journey without interruption.\n\nOpen the app to pay or upload your proof.`;
+        
+        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: inst.telegram_id,
+            text: message,
+            parse_mode: 'Markdown'
+          })
+        });
+      }
+      // Mark as reminded so we don't spam
+      await env.DB.prepare('UPDATE installments SET reminder_sent = 1 WHERE id = ?').bind(inst.id).run();
     }
   }
 };
