@@ -12,7 +12,6 @@ not_found_handling = "single-page-application"
 PAYSTACK_SECRET_KEY = "sk_live_YOUR_ACTUAL_LIVE_PAYSTACK_SECRET_KEY_HERE"
 BOT_TOKEN = "8954408184:AAEQ5fXqqQDvVa6IkXOqGKUPhdkCGB471Eo"
 
-# Run the scheduled function once a day at 2:00 AM UTC (3:00 AM WAT)
 [triggers]
 crons = ["0 2 * * *"]
 
@@ -20,3 +19,8 @@ crons = ["0 2 * * *"]
 binding = "DB"
 database_name = "tigerslair-db"
 database_id = "0ab76b65-3e86-41aa-90f5-9196dae9772d"
+
+# --- TEMPORARILY COMMENTED OUT UNTIL R2 BUCKET IS CREATED ---
+# [[r2_buckets]]
+# binding = "R2_BUCKET"
+# bucket_name = "tigerslair-resources"

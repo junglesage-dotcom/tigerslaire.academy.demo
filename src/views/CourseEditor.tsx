@@ -1,546 +1,277 @@
 import { useEffect, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useStore } from "../lib/store";
-import { getYouTubeEmbedUrl } from "../lib/youtube";
+import FileUpload from "../components/FileUpload";
+import ResourceInput from "../components/ResourceInput";
+import ResourceViewer from "../components/ResourceViewer";
 
-export default function CourseEditor({ courseId }: { courseId: string }) {
-  const { go, toast, confirm } = useStore();
+export default function CourseEditor() {
+  const { courseId } = useParams<{ courseId: string }>();
+  const navigate = useNavigate();
+  const { user, toast } = useStore();
   const [course, setCourse] = useState<any>(null);
+  const [modules, setModules] = useState<any[]>([]);
+  const [lessons, setLessons] = useState<any[]>([]);
+  const [resources, setResources] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'details' | 'modules' | 'lessons' | 'quiz' | 'resources'>('details');
-
-  // Form states
-  const [newModule, setNewModule] = useState({ title: "", orderIndex: 1 });
-  const [newLesson, setNewLesson] = useState({
-    title: "", minutes: 20, moduleId: "", tags: "Video", bullets: "", msg: 0, youtubeUrl: "", orderIndex: 1
-  });
-  const [newQuiz, setNewQuiz] = useState({ question: "", options: "", answer: 0, orderIndex: 1 });
-
-  // Resources
-  const [resources, setResources] = useState<Record<string, any[]>>({});
-  const [selectedLessonForResources, setSelectedLessonForResources] = useState<string | null>(null);
-  const [newResource, setNewResource] = useState({
-    type: 'video_youtube',
-    title: '',
-    description: '',
-    sourceUrl: '',
-    thumbnailUrl: '',
-    durationSeconds: 0,
-    fileSizeBytes: 0,
-    accessLevel: 'enrolled',
-    orderIndex: 0
-  });
-
-  // Resource types for the dropdown
-  const resourceTypes = [
-    { value: 'video_youtube', label: '▶️ YouTube Video' },
-    { value: 'video_r2', label: '🎬 Video (R2/Hosted)' },
-    { value: 'video_external', label: '📹 External Video' },
-    { value: 'document_pdf', label: '📄 PDF Document' },
-    { value: 'document_text', label: '📝 Reading Material' },
-    { value: 'audio', label: '🎵 Audio' },
-    { value: 'link_drive', label: '📁 Google Drive Link' },
-    { value: 'link_external', label: '🌐 External Link' },
-    { value: 'assignment', label: '📋 Assignment' },
-    { value: 'image', label: '🖼️ Image' },
-  ];
-
-  // Maps a resource type to a single emoji icon (used in the resources list)
-  const getTypeIcon = (type: string): string => {
-    const found = resourceTypes.find(t => t.value === type);
-    if (found) return found.label.trim().charAt(0);
-    const icons: Record<string, string> = {
-      video_youtube: '▶️', video_r2: '🎬', video_external: '📹',
-      document_pdf: '📄', document_text: '📝', audio: '🎵',
-      link_drive: '📁', link_external: '🌐', assignment: '📋', image: '🖼️',
-    };
-    return icons[type] || '📦';
-  };
+  const [activeModule, setActiveModule] = useState<string | null>(null);
+  const [activeLesson, setActiveLesson] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!user || user.role !== 'admin') {
+      toast("Admin access required");
+      navigate("/");
+      return;
+    }
     loadCourse();
-  }, [courseId]);
+  }, [courseId, user, navigate, toast]);
 
   const loadCourse = async () => {
+    if (!courseId) return;
     try {
-      const res = await api.getCourse(courseId);
-      setCourse(res.data);
-    } catch (e: any) {
-      toast("Failed to load course");
+      setLoading(true);
+      const courseRes = await api.getCourse(courseId);
+      setCourse(courseRes.data);
+      setModules(courseRes.data.modules || []);
+      setLessons(courseRes.data.modules?.flatMap((m: any) => m.lessons || []) || []);
+      
+      // Load resources for all lessons
+      const allResources: any[] = [];
+      for (const module of courseRes.data.modules || []) {
+        for (const lesson of module.lessons || []) {
+          const resRes = await api.getResources(courseId, lesson.id);
+          allResources.push(...resRes.data.map((r: any) => ({ ...r, lessonId: lesson.id })));
+        }
+      }
+      setResources(allResources);
+    } catch (err: any) {
+      toast(err.message || "Failed to load course");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAddModule = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAddModule = async () => {
+    const title = prompt("Enter module title:");
+    if (!title) return;
+    
     try {
-      await api.addModule(courseId, newModule);
+      await api.addModule(courseId!, { title, orderIndex: modules.length });
       toast("Module added");
-      setNewModule({ title: "", orderIndex: newModule.orderIndex + 1 });
       loadCourse();
-    } catch (e: any) {
-      toast(e.message);
+    } catch (err: any) {
+      toast(err.message || "Failed to add module");
     }
   };
 
-  const handleAddLesson = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newLesson.moduleId) return toast("Select a module");
+  const handleAddLesson = async (moduleId: string) => {
+    const title = prompt("Enter lesson title:");
+    if (!title) return;
+    
     try {
-      await api.addLesson(courseId, {
-        ...newLesson,
-        tags: newLesson.tags.split(",").map(t => t.trim()),
-        bullets: newLesson.bullets.split("\n").filter(b => b.trim())
+      await api.addLesson(courseId!, {
+        moduleId,
+        title,
+        minutes: 0,
+        tags: [],
+        bullets: [],
+        orderIndex: lessons.filter(l => l.module_id === moduleId).length
       });
       toast("Lesson added");
-      setNewLesson({ ...newLesson, title: "", bullets: "", youtubeUrl: "" });
       loadCourse();
-    } catch (e: any) {
-      toast(e.message);
+    } catch (err: any) {
+      toast(err.message || "Failed to add lesson");
     }
   };
 
-  const handleDeleteLesson = async (lessonId: string) => {
-    confirm({
-      title: "Delete lesson?",
-      message: "This will permanently remove the lesson and its resources. This cannot be undone.",
-      confirmLabel: "Delete",
-      onConfirm: async () => {
-        try {
-          await api.deleteLesson(lessonId);
-          toast("Lesson deleted");
-          loadCourse();
-        } catch (e: any) {
-          toast(e.message);
-        }
-      },
-    });
-  };
-
-  const handleAddQuiz = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await api.addQuizQuestion(courseId, {
-        ...newQuiz,
-        options: newQuiz.options.split("\n").filter(o => o.trim())
-      });
-      toast("Quiz question added");
-      setNewQuiz({ question: "", options: "", answer: 0, orderIndex: newQuiz.orderIndex + 1 });
-      loadCourse();
-    } catch (e: any) {
-      toast(e.message);
-    }
-  };
-
-  // Load resources when a lesson is selected
-  const loadResources = async (lessonId: string) => {
-    try {
-      const res = await api.getResources(courseId, lessonId);
-      setResources({ ...resources, [lessonId]: res.data });
-    } catch (e: any) {
-      toast('Failed to load resources');
-    }
-  };
-
-  const handleAddResource = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedLessonForResources) return;
+  const handleAddResource = async (lessonId: string, resourceData: any) => {
     try {
       await api.createResource({
-        lessonId: selectedLessonForResources,
+        lessonId,
         courseId,
-        ...newResource
+        type: resourceData.type,
+        title: resourceData.name || "Resource",
+        sourceUrl: resourceData.url,
+        sourceType: resourceData.sourceType || 'external',
+        key: resourceData.key,
+        accessLevel: 'enrolled'
       });
-      toast('Resource added');
-      setNewResource({
-        type: 'video_youtube',
-        title: '', description: '', sourceUrl: '', thumbnailUrl: '',
-        durationSeconds: 0, fileSizeBytes: 0, accessLevel: 'enrolled', orderIndex: 0
-      });
-      loadResources(selectedLessonForResources);
-    } catch (e: any) {
-      toast(e.message);
+      toast("Resource added");
+      loadCourse();
+    } catch (err: any) {
+      toast(err.message || "Failed to add resource");
     }
   };
 
-  const handleDeleteResource = async (resourceId: string) => {
-    confirm({
-      title: "Delete resource?",
-      message: "This resource will be permanently removed from the lesson.",
-      confirmLabel: "Delete",
-      onConfirm: async () => {
-    try {
-      await api.deleteResource(resourceId);
-      toast('Resource deleted');
-      if (selectedLessonForResources) loadResources(selectedLessonForResources);
-    } catch (e: any) {
-      toast(e.message);
-    }
-    },
-    });
-    };
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="flex items-center gap-3">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-amber border-t-transparent" />
+          <p className="font-mono text-sm text-amber">Loading course editor...</p>
+        </div>
+      </div>
+    );
+  }
 
-    if (loading) return <div className="p-8 text-amber">Loading course...</div>;
-  if (!course) return <div className="p-8 text-alert">Course not found</div>;
-
-  const tabs = [
-    { id: 'details', label: 'Details' },
-    { id: 'modules', label: 'Modules' },
-    { id: 'lessons', label: 'Lessons' },
-    { id: 'resources', label: 'Resources' },  // NEW
-    { id: 'quiz', label: 'Quiz' },
-  ] as const;
+  if (!course) return null;
 
   return (
-    <div className="mx-auto max-w-5xl px-5 py-12 sm:px-8">
-      <button onClick={() => go({ view: "admin" })} className="mb-4 text-sm text-smoke hover:text-amber">
-        ← Back to Admin
-      </button>
-      
-      <h1 className="font-display text-3xl font-extrabold text-bone mb-2">{course.code}: {course.title}</h1>
-      <p className="text-smoke mb-8">{course.tagline}</p>
-
-      {/* Tabs */}
-      <div className="mb-6 flex gap-2 border-b border-bone/10">
-        {tabs.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setActiveTab(t.id)}
-            className={`px-4 py-2 font-display text-sm font-bold transition-colors ${
-              activeTab === t.id ? 'text-amber border-b-2 border-amber' : 'text-smoke hover:text-bone'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+    <div className="mx-auto max-w-7xl px-5 py-12 sm:px-8">
+      <div className="mb-8 flex items-center justify-between">
+        <div>
+          <h1 className="font-display text-3xl font-extrabold text-bone">{course.code}: {course.title}</h1>
+          <p className="text-sm text-smoke mt-1">Course Editor</p>
+        </div>
+        <button
+          onClick={() => navigate("/admin")}
+          className="rounded-md border border-bone/20 px-4 py-2 text-xs font-bold uppercase tracking-widest text-bone hover:bg-bone/5"
+        >
+          Back to Admin
+        </button>
       </div>
 
-      {/* Details Tab */}
-      {activeTab === 'details' && (
-        <div className="rounded-lg border border-bone/10 bg-coal p-6 space-y-3">
-          <p><span className="text-smoke">Code:</span> <span className="text-bone font-bold">{course.code}</span></p>
-          <p><span className="text-smoke">Level:</span> <span className="text-bone">{course.level}</span></p>
-          <p><span className="text-smoke">Weeks:</span> <span className="text-bone">{course.weeks}</span></p>
-          <p><span className="text-smoke">Price:</span> <span className="text-amber font-bold">₦{course.price?.toLocaleString()}</span></p>
-          <p><span className="text-smoke">Telegram Channel:</span> <span className="text-tgsky">{course.channel}</span></p>
-          <div>
-            <p className="text-smoke mb-1">Outcomes:</p>
-            <ul className="list-disc list-inside text-bone text-sm space-y-1">
-              {course.outcomes.map((o: string, i: number) => <li key={i}>{o}</li>)}
-            </ul>
-          </div>
-          <div>
-            <p className="text-smoke mb-1">Skills:</p>
-            <div className="flex flex-wrap gap-2">
-              {course.skills.map((s: string, i: number) => (
-                <span key={i} className="rounded bg-amber/10 px-2 py-1 text-xs text-amber">{s}</span>
-              ))}
+      {/* Modules Section */}
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="font-display text-xl font-bold text-amber">Modules</h2>
+          <button
+            onClick={handleAddModule}
+            className="rounded-md bg-amber px-4 py-2 text-xs font-bold uppercase tracking-widest text-ink hover:bg-amber/90"
+          >
+            + Add Module
+          </button>
+        </div>
+
+        {modules.map((module, index) => (
+          <div key={module.id} className="rounded-lg border border-bone/10 bg-coal">
+            <div
+              className="flex items-center justify-between p-4 cursor-pointer hover:bg-ink/50"
+              onClick={() => setActiveModule(activeModule === module.id ? null : module.id)}
+            >
+              <div className="flex items-center gap-3">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-amber/20 text-amber text-sm font-bold">
+                  {index + 1}
+                </span>
+                <h3 className="font-display text-lg font-bold text-bone">{module.title}</h3>
+              </div>
+              <span className="text-sm text-smoke">
+                {activeModule === module.id ? '▼' : '▶'}
+              </span>
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* Modules Tab */}
-      {activeTab === 'modules' && (
-        <div className="space-y-6">
-          <div className="rounded-lg border border-bone/10 bg-coal p-6">
-            <h3 className="font-display text-lg font-bold text-amber mb-4">Add Module</h3>
-            <form onSubmit={handleAddModule} className="flex gap-2">
-              <input
-                required
-                placeholder="Module title"
-                className="flex-1 rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
-                value={newModule.title}
-                onChange={e => setNewModule({ ...newModule, title: e.target.value })}
-              />
-              <input
-                type="number"
-                placeholder="Order"
-                className="w-20 rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
-                value={newModule.orderIndex}
-                onChange={e => setNewModule({ ...newModule, orderIndex: parseInt(e.target.value) })}
-              />
-              <button type="submit" className="rounded bg-amber px-4 py-2 text-xs font-bold uppercase text-ink">
-                Add
-              </button>
-            </form>
-          </div>
+            {activeModule === module.id && (
+              <div className="border-t border-bone/10 p-4 space-y-4">
+                {/* Lessons in this module */}
+                <div className="space-y-2">
+                  {lessons
+                    .filter(l => l.module_id === module.id)
+                    .map((lesson, lIndex) => (
+                      <div key={lesson.id} className="rounded border border-bone/5 bg-ink p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-mono text-smoke">{lIndex + 1}.</span>
+                            <span className="font-bold text-bone">{lesson.title}</span>
+                            <span className="text-xs text-smoke">({lesson.minutes} min)</span>
+                          </div>
+                          <button
+                            onClick={() => setActiveLesson(activeLesson === lesson.id ? null : lesson.id)}
+                            className="text-xs text-amber hover:underline"
+                          >
+                            {activeLesson === lesson.id ? 'Hide Resources' : 'Manage Resources'}
+                          </button>
+                        </div>
 
-          <div className="space-y-3">
-            {course.modules.map((m: any) => (
-              <div key={m.id} className="rounded border border-bone/5 bg-coal p-4">
-                <p className="font-bold text-bone">{m.title}</p>
-                <p className="text-xs text-smoke mt-1">Order: {m.order_index} • {m.lessons?.length || 0} lessons</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+                        {/* Resource Management */}
+                        {activeLesson === lesson.id && (
+                          <div className="mt-4 space-y-4 border-t border-bone/10 pt-4">
+                            <h4 className="text-sm font-bold text-amber">Add Resources</h4>
+                            
+                            {/* File Upload */}
+                            <div className="grid gap-4 sm:grid-cols-2">
+                              <div>
+                                <p className="text-xs text-smoke mb-2">Upload Video</p>
+                                <FileUpload
+                                  courseId={courseId!}
+                                  lessonId={lesson.id}
+                                  type="video"
+                                  onUploadComplete={(data) => handleAddResource(lesson.id, data)}
+                                />
+                              </div>
+                              <div>
+                                <p className="text-xs text-smoke mb-2">Upload Document</p>
+                                <FileUpload
+                                  courseId={courseId!}
+                                  lessonId={lesson.id}
+                                  type="document"
+                                  onUploadComplete={(data) => handleAddResource(lesson.id, data)}
+                                />
+                              </div>
+                            </div>
 
-      {/* Lessons Tab */}
-      {activeTab === 'lessons' && (
-        <div className="space-y-6">
-          <div className="rounded-lg border border-bone/10 bg-coal p-6">
-            <h3 className="font-display text-lg font-bold text-amber mb-4">Add Lesson</h3>
-            <form onSubmit={handleAddLesson} className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <input
-                  required
-                  placeholder="Lesson title"
-                  className="col-span-2 rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
-                  value={newLesson.title}
-                  onChange={e => setNewLesson({ ...newLesson, title: e.target.value })}
-                />
-                <select
-                  required
-                  className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
-                  value={newLesson.moduleId}
-                  onChange={e => setNewLesson({ ...newLesson, moduleId: e.target.value })}
-                >
-                  <option value="">Select module</option>
-                  {course.modules.map((m: any) => (
-                    <option key={m.id} value={m.id}>{m.title}</option>
-                  ))}
-                </select>
-                <input
-                  type="number"
-                  placeholder="Minutes"
-                  className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
-                  value={newLesson.minutes}
-                  onChange={e => setNewLesson({ ...newLesson, minutes: parseInt(e.target.value) })}
-                />
-                <input
-                  placeholder="Tags (comma-separated)"
-                  className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
-                  value={newLesson.tags}
-                  onChange={e => setNewLesson({ ...newLesson, tags: e.target.value })}
-                />
-                <input
-                  placeholder="YouTube URL"
-                  className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
-                  value={newLesson.youtubeUrl}
-                  onChange={e => setNewLesson({ ...newLesson, youtubeUrl: e.target.value })}
-                />
-              </div>
-              <textarea
-                placeholder="Bullets (one per line)"
-                rows={3}
-                className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
-                value={newLesson.bullets}
-                onChange={e => setNewLesson({ ...newLesson, bullets: e.target.value })}
-              />
-              <button type="submit" className="rounded bg-amber px-4 py-2 text-xs font-bold uppercase text-ink">
-                Add Lesson
-              </button>
-            </form>
-          </div>
+                            {/* External URL Input */}
+                            <div>
+                              <p className="text-xs text-smoke mb-2">Or Paste External Link (YouTube, Drive, etc.)</p>
+                              <ResourceInput
+                                courseId={courseId!}
+                                lessonId={lesson.id}
+                                type="video"
+                                onResourceReady={(data) => handleAddResource(lesson.id, data)}
+                              />
+                            </div>
 
-          <div className="space-y-3">
-            {course.modules.map((m: any) => (
-              <div key={m.id} className="rounded border border-bone/10 bg-coal p-4">
-                <h4 className="font-bold text-amber mb-3">{m.title}</h4>
-                {m.lessons?.map((l: any) => (
-                  <div key={l.id} className="mb-3 rounded border border-bone/5 bg-ink p-3">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <p className="font-bold text-bone">{l.title}</p>
-                        <p className="text-xs text-smoke mt-1">{l.minutes} min • {l.tags?.join(', ')}</p>
-                        {l.youtube_url && (
-                          <p className="text-xs text-tgsky mt-1">🎬 Has video</p>
+                            {/* Existing Resources */}
+                            {resources.filter(r => r.lessonId === lesson.id).length > 0 && (
+                              <div className="mt-4">
+                                <p className="text-xs font-bold text-amber mb-2">Existing Resources:</p>
+                                <div className="space-y-2">
+                                  {resources
+                                    .filter(r => r.lessonId === lesson.id)
+                                    .map(resource => (
+                                      <div key={resource.id} className="flex items-center justify-between rounded border border-bone/5 bg-coal p-3">
+                                        <div>
+                                          <p className="text-sm font-bold text-bone">{resource.title}</p>
+                                          <p className="text-xs text-smoke">{resource.type} • {resource.source_type || 'external'}</p>
+                                        </div>
+                                        <button
+                                          onClick={async () => {
+                                            if (confirm("Delete this resource?")) {
+                                              try {
+                                                await api.deleteResource(resource.id);
+                                                toast("Resource deleted");
+                                                loadCourse();
+                                              } catch (err: any) {
+                                                toast(err.message || "Failed to delete");
+                                              }
+                                            }
+                                          }}
+                                          className="text-xs text-alert hover:underline"
+                                        >
+                                          Delete
+                                        </button>
+                                      </div>
+                                    ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
-                      <button
-                        onClick={() => handleDeleteLesson(l.id)}
-                        className="text-xs text-alert hover:underline"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Resources Tab */}
-      {activeTab === 'resources' && (
-        <div className="space-y-6">
-          <div className="rounded-lg border border-bone/10 bg-coal p-6">
-            <h3 className="font-display text-lg font-bold text-amber mb-4">Select a Lesson</h3>
-            <select
-              className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
-              value={selectedLessonForResources || ''}
-              onChange={(e) => {
-                const lessonId = e.target.value;
-                setSelectedLessonForResources(lessonId);
-                if (lessonId) loadResources(lessonId);
-              }}
-            >
-              <option value="">Choose a lesson...</option>
-              {course.modules.map((m: any) => (
-                <optgroup key={m.id} label={m.title}>
-                  {m.lessons?.map((l: any) => (
-                    <option key={l.id} value={l.id}>{l.title}</option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </div>
-
-          {selectedLessonForResources && (
-            <>
-              {/* Add Resource Form */}
-              <div className="rounded-lg border border-bone/10 bg-coal p-6">
-                <h3 className="font-display text-lg font-bold text-amber mb-4">Add Resource</h3>
-                <form onSubmit={handleAddResource} className="space-y-3">
-                  <select
-                    className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
-                    value={newResource.type}
-                    onChange={(e) => setNewResource({ ...newResource, type: e.target.value })}
-                  >
-                    {resourceTypes.map(t => (
-                      <option key={t.value} value={t.value}>{t.label}</option>
                     ))}
-                  </select>
-                  <input
-                    required
-                    placeholder="Title"
-                    className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
-                    value={newResource.title}
-                    onChange={(e) => setNewResource({ ...newResource, title: e.target.value })}
-                  />
-                  <textarea
-                    placeholder="Description (optional)"
-                    rows={2}
-                    className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
-                    value={newResource.description}
-                    onChange={(e) => setNewResource({ ...newResource, description: e.target.value })}
-                  />
-                  <input
-                    required
-                    placeholder="Source URL (YouTube, R2, Drive, etc.)"
-                    className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
-                    value={newResource.sourceUrl}
-                    onChange={(e) => setNewResource({ ...newResource, sourceUrl: e.target.value })}
-                  />
-                  {(newResource.type === 'video_r2' || newResource.type === 'video_external') && (
-                    <>
-                      <input
-                        placeholder="Thumbnail URL (optional)"
-                        className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
-                        value={newResource.thumbnailUrl}
-                        onChange={(e) => setNewResource({ ...newResource, thumbnailUrl: e.target.value })}
-                      />
-                      <input
-                        type="number"
-                        placeholder="Duration (seconds)"
-                        className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
-                        value={newResource.durationSeconds}
-                        onChange={(e) => setNewResource({ ...newResource, durationSeconds: parseInt(e.target.value) || 0 })}
-                      />
-                    </>
-                  )}
-                  <select
-                    className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
-                    value={newResource.accessLevel}
-                    onChange={(e) => setNewResource({ ...newResource, accessLevel: e.target.value })}
-                  >
-                    <option value="public">🌍 Public (free preview)</option>
-                    <option value="enrolled">🔒 Enrolled students only</option>
-                    <option value="premium">⭐ Premium tier only</option>
-                  </select>
-                  <button type="submit" className="w-full rounded bg-amber py-2 text-xs font-bold uppercase text-ink">
-                    Add Resource
-                  </button>
-                </form>
-              </div>
-
-              {/* Existing Resources */}
-              <div className="rounded-lg border border-bone/10 bg-coal p-6">
-                <h3 className="font-display text-lg font-bold text-amber mb-4">
-                  Resources ({resources[selectedLessonForResources]?.length || 0})
-                </h3>
-                <div className="space-y-2">
-                  {(resources[selectedLessonForResources] || []).map((r: any) => (
-                    <div key={r.id} className="flex items-center justify-between rounded border border-bone/5 bg-ink p-3">
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <span className="text-xl">{getTypeIcon(r.type)}</span>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-bold text-bone truncate">{r.title}</p>
-                          <p className="text-xs text-smoke truncate">{r.source_url}</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleDeleteResource(r.id)}
-                        className="ml-2 text-xs text-alert hover:underline"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  ))}
-                  {(resources[selectedLessonForResources] || []).length === 0 && (
-                    <p className="text-sm text-smoke text-center py-4">No resources yet.</p>
-                  )}
                 </div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
 
-      {/* Quiz Tab */}
-      {activeTab === 'quiz' && (
-        <div className="space-y-6">
-          <div className="rounded-lg border border-bone/10 bg-coal p-6">
-            <h3 className="font-display text-lg font-bold text-amber mb-4">Add Quiz Question</h3>
-            <form onSubmit={handleAddQuiz} className="space-y-3">
-              <input
-                required
-                placeholder="Question"
-                className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
-                value={newQuiz.question}
-                onChange={e => setNewQuiz({ ...newQuiz, question: e.target.value })}
-              />
-              <textarea
-                required
-                placeholder="Options (one per line)"
-                rows={4}
-                className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
-                value={newQuiz.options}
-                onChange={e => setNewQuiz({ ...newQuiz, options: e.target.value })}
-              />
-              <input
-                type="number"
-                placeholder="Correct answer index (0-based)"
-                className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
-                value={newQuiz.answer}
-                onChange={e => setNewQuiz({ ...newQuiz, answer: parseInt(e.target.value) })}
-              />
-              <button type="submit" className="rounded bg-amber px-4 py-2 text-xs font-bold uppercase text-ink">
-                Add Question
-              </button>
-            </form>
-          </div>
-
-          <div className="space-y-3">
-            {course.quiz?.map((q: any, i: number) => (
-              <div key={i} className="rounded border border-bone/5 bg-ink p-3">
-                <p className="font-bold text-bone">{q.question}</p>
-                <ul className="mt-2 text-sm text-smoke space-y-1">
-                  {q.options?.map((o: string, j: number) => (
-                    <li key={j} className={j === q.answer ? 'text-mint font-bold' : ''}>
-                      {j === q.answer ? '✓ ' : '  '}{o}
-                    </li>
-                  ))}
-                </ul>
+                <button
+                  onClick={() => handleAddLesson(module.id)}
+                  className="w-full rounded-md border border-dashed border-bone/20 py-2 text-xs font-bold uppercase tracking-widest text-smoke hover:border-amber hover:text-amber"
+                >
+                  + Add Lesson
+                </button>
               </div>
-            ))}
+            )}
           </div>
-        </div>
-      )}
+        ))}
+      </div>
     </div>
   );
 }

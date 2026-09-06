@@ -169,6 +169,43 @@ export const api = {
 
   getResources: (courseId: string, lessonId: string) =>
     request<{ data: any[] }>(`/api/courses/${courseId}/lessons/${lessonId}/resources`),
+  
+  // NEW: Hybrid Upload (Handles both R2 Files AND External URLs)
+  uploadResource: async (file: File | null, externalUrl: string | null, courseId: string, lessonId: string, type: string) => {
+    const token = getToken();
+    
+    // If it's an external URL, we just return it directly to be saved in the DB
+    if (externalUrl) {
+      return { success: true, data: { url: externalUrl, type, name: 'External Link', sourceType: 'external' } };
+    }
+
+    // If it's a file, upload to R2
+    if (!file) throw new Error('No file or URL provided');
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('courseId', courseId);
+    formData.append('lessonId', lessonId);
+    formData.append('type', type);
+
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`${API_BASE}/api/admin/resources/upload`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Upload failed');
+    return data;
+  },
+
+  // Secure Resource Streaming
+  getResourceStreamData: (resourceId: string) =>
+    request<{ data: any }>(`/api/resources/stream/${resourceId}`),
+
   createResource: (data: any) =>
     request<{ data: any }>('/api/admin/resources', {
       method: 'POST', body: JSON.stringify(data)
@@ -179,10 +216,6 @@ export const api = {
     }),
   deleteResource: (id: string) =>
     request<{ success: boolean }>(`/api/admin/resources/${id}`, { method: 'DELETE' }),
-  getUploadUrl: (filename: string, contentType: string) =>
-    request<{ data: any }>('/api/admin/resources/upload-url', {
-      method: 'POST', body: JSON.stringify({ filename, contentType })
-    }),
 
   initiatePayment: (data: any) =>
     request<{ data: any }>('/api/payments/initiate', {
@@ -200,14 +233,12 @@ export const api = {
       method: 'POST', body: JSON.stringify({ reference, adminToken: getToken() })
     }),
 
-  // Installments
   getMyInstallments: () => request<{ data: any[] }>('/api/installments/my'),
   submitInstallmentProof: (installmentId: string, proofUrl: string) =>
     request<{ success: boolean }>('/api/installments/submit-proof', {
       method: 'POST', body: JSON.stringify({ installmentId, proofUrl })
     }),
 
-  // Admin: Installments
   getAdminInstallments: () => request<{ data: any[] }>('/api/admin/installments'),
   approveInstallment: (installmentId: string) =>
     request<{ success: boolean }>('/api/installments/approve', {
