@@ -58,6 +58,19 @@ function getEmbedUrl(url, type) {
   return url; // Return original if no embed pattern matches
 }
 
+// Helper to log admin actions for security and accountability
+async function logAudit(env, adminId, action, details) {
+  try {
+    const id = 'audit_' + Math.random().toString(36).slice(2, 10);
+    await env.DB.prepare(
+      'INSERT INTO audit_logs (id, admin_id, action, details, created_at) VALUES (?, ?, ?, ?, ?)'
+    ).bind(id, adminId, action, details, Date.now()).run();
+  } catch (e) {
+    console.error('Failed to log audit:', e);
+    // Fail silently so it doesn't break the main action
+  }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -170,6 +183,8 @@ export default {
         if (payment.course_id) {
           await env.DB.prepare('INSERT OR IGNORE INTO enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, ?)').bind(payment.user_id, payment.course_id, Date.now()).run();
         }
+        
+        await logAudit(env, adminToken, 'PAYMENT_APPROVED', `Approved payment reference: ${reference}`);
         return json({ success: true });
       }
 
@@ -209,6 +224,8 @@ export default {
              await env.DB.prepare('INSERT OR IGNORE INTO enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, ?)').bind(inst.user_id, inst.course_id, Date.now()).run();
           }
         }
+        
+        await logAudit(env, adminToken, 'INSTALLMENT_APPROVED', `Approved installment ID: ${installmentId}`);
         return json({ success: true });
       }
 
@@ -492,7 +509,7 @@ export default {
       }
 
       // ============================================
-      // ADMIN API
+      // ADMIN API (With Full Audit Logging)
       // ============================================
       if (path === '/api/admin/mentors' && method === 'POST') {
         const token = getToken();
@@ -501,6 +518,7 @@ export default {
         const { userId, name, bio, specialties, hourlyRate, imageUrl } = await request.json();
         const id = 'mentor_' + uid();
         await env.DB.prepare('INSERT INTO mentors (id, user_id, name, bio, specialties, hourly_rate, image_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').bind(id, userId, name, bio, JSON.stringify(specialties), hourlyRate, imageUrl, Date.now()).run();
+        await logAudit(env, token, 'MENTOR_CREATED', `Created mentor: ${name}`);
         return json({ data: { id } });
       }
 
@@ -514,6 +532,7 @@ export default {
         for (const courseId of courseIds) {
           await env.DB.prepare('INSERT INTO course_instructors (course_id, instructor_id) VALUES (?, ?)').bind(courseId, id).run();
         }
+        await logAudit(env, token, 'INSTRUCTOR_CREATED', `Created instructor: ${name}`);
         return json({ data: { id } });
       }
 
@@ -532,6 +551,7 @@ export default {
         const instId = path.split('/')[3];
         await env.DB.prepare('DELETE FROM instructors WHERE id = ?').bind(instId).run();
         await env.DB.prepare('DELETE FROM course_instructors WHERE instructor_id = ?').bind(instId).run();
+        await logAudit(env, token, 'INSTRUCTOR_DELETED', `Deleted instructor ID: ${instId}`);
         return json({ success: true });
       }
 
@@ -550,6 +570,7 @@ export default {
         const { id, code, title, tagline, level, path: coursePath, weeks, price, priceUsd, hue, icon, summary, outcomes, skills, channel } = await request.json();
         const courseId = id || 'course_' + uid();
         await env.DB.prepare(`INSERT INTO courses (id, code, title, tagline, level, path, weeks, price, price_usd, hue, icon, summary, outcomes, skills, channel, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(courseId, code, title, tagline, level, coursePath, weeks, price, priceUsd || 0, hue, icon, summary, JSON.stringify(outcomes), JSON.stringify(skills), channel, Date.now()).run();
+        await logAudit(env, token, 'COURSE_CREATED', `Created course: ${title} (${courseId})`);
         return json({ data: { id: courseId } });
       }
 
@@ -565,6 +586,7 @@ export default {
           else if (['code', 'title', 'tagline', 'level', 'path', 'weeks', 'price', 'price_usd', 'hue', 'icon', 'summary', 'channel'].includes(key)) { fields.push(`${key} = ?`); values.push(val); }
         }
         if (fields.length > 0) { values.push(courseId); await env.DB.prepare(`UPDATE courses SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run(); }
+        await logAudit(env, token, 'COURSE_UPDATED', `Updated course ID: ${courseId}`);
         return json({ success: true });
       }
 
@@ -575,6 +597,7 @@ export default {
         const courseId = path.split('/')[3];
         const { title, orderIndex } = await request.json();
         const result = await env.DB.prepare('INSERT INTO modules (course_id, title, order_index) VALUES (?, ?, ?)').bind(courseId, title, orderIndex || 99).run();
+        await logAudit(env, token, 'MODULE_CREATED', `Created module in course ID: ${courseId}`);
         return json({ data: { id: result.meta.last_row_id } });
       }
 
@@ -586,6 +609,7 @@ export default {
         const { id, moduleId, title, minutes, tags, bullets, msg, youtubeUrl, orderIndex } = await request.json();
         const lessonId = id || 'les_' + uid();
         await env.DB.prepare(`INSERT INTO lessons (id, module_id, course_id, title, minutes, tags, bullets, msg, youtube_url, order_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(lessonId, moduleId, courseId, title, minutes, JSON.stringify(tags || []), JSON.stringify(bullets || []), msg || 0, youtubeUrl || null, orderIndex || 99).run();
+        await logAudit(env, token, 'LESSON_CREATED', `Created lesson in course ID: ${courseId}`);
         return json({ data: { id: lessonId } });
       }
 
@@ -601,6 +625,7 @@ export default {
           else if (['title', 'minutes', 'module_id', 'msg', 'youtube_url', 'order_index'].includes(key)) { fields.push(`${key} = ?`); values.push(val); }
         }
         if (fields.length > 0) { values.push(lessonId); await env.DB.prepare(`UPDATE lessons SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run(); }
+        await logAudit(env, token, 'LESSON_UPDATED', `Updated lesson ID: ${lessonId}`);
         return json({ success: true });
       }
 
@@ -610,6 +635,7 @@ export default {
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
         const lessonId = path.split('/')[3];
         await env.DB.prepare('DELETE FROM lessons WHERE id = ?').bind(lessonId).run();
+        await logAudit(env, token, 'LESSON_DELETED', `Deleted lesson ID: ${lessonId}`);
         return json({ success: true });
       }
 
@@ -620,6 +646,7 @@ export default {
         const courseId = path.split('/')[3];
         const { question, options, answer, orderIndex } = await request.json();
         await env.DB.prepare('INSERT INTO quiz_questions (course_id, question, options, answer, order_index) VALUES (?, ?, ?, ?, ?)').bind(courseId, question, JSON.stringify(options), answer, orderIndex || 99).run();
+        await logAudit(env, token, 'QUIZ_QUESTION_CREATED', `Added quiz question to course ID: ${courseId}`);
         return json({ success: true });
       }
 
@@ -630,6 +657,7 @@ export default {
         const { lessonId, courseId, type, title, description, sourceUrl, thumbnailUrl, durationSeconds, fileSizeBytes, metadata, accessLevel, orderIndex, sourceType } = await request.json();
         const id = 'res_' + uid();
         await env.DB.prepare(`INSERT INTO resources (id, lesson_id, course_id, type, title, description, source_url, thumbnail_url, duration_seconds, file_size_bytes, metadata, access_level, order_index, source_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, lessonId, courseId, type, title, description || null, sourceUrl, thumbnailUrl || null, durationSeconds || null, fileSizeBytes || null, metadata ? JSON.stringify(metadata) : null, accessLevel || 'enrolled', orderIndex || 0, sourceType || 'external', Date.now()).run();
+        await logAudit(env, token, 'RESOURCE_CREATED', `Created resource for lesson ID: ${lessonId}`);
         return json({ data: { id } });
       }
 
@@ -645,6 +673,7 @@ export default {
           else if (['type', 'title', 'description', 'source_url', 'thumbnail_url', 'duration_seconds', 'file_size_bytes', 'access_level', 'order_index', 'source_type'].includes(key)) { fields.push(`${key} = ?`); values.push(val); }
         }
         if (fields.length > 0) { values.push(resourceId); await env.DB.prepare(`UPDATE resources SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run(); }
+        await logAudit(env, token, 'RESOURCE_UPDATED', `Updated resource ID: ${resourceId}`);
         return json({ success: true });
       }
 
@@ -654,6 +683,7 @@ export default {
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
         const resourceId = path.split('/')[3];
         await env.DB.prepare('DELETE FROM resources WHERE id = ?').bind(resourceId).run();
+        await logAudit(env, token, 'RESOURCE_DELETED', `Deleted resource ID: ${resourceId}`);
         return json({ success: true });
       }
 
@@ -680,7 +710,6 @@ export default {
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
 
-        // Safety check: If R2 isn't configured yet, return a helpful error instead of crashing
         if (!env.R2_BUCKET) {
           return error('R2 bucket not configured yet. Please add it to wrangler.toml', 500);
         }
@@ -717,20 +746,16 @@ export default {
         const resourceId = path.split('/').pop();
         const token = getToken();
         
-        // 1. Fetch the resource metadata from DB
         const resource = await env.DB.prepare('SELECT * FROM resources WHERE id = ?').bind(resourceId).first();
         if (!resource) return error('Resource not found', 404);
 
-        // 2. Security Check: Ensure the user is enrolled in the course (unless it's a public resource)
         if (resource.access_level === 'enrolled') {
           if (!token) return error('Unauthorized', 401);
           const enrollment = await env.DB.prepare('SELECT 1 FROM enrollments WHERE user_id = ? AND course_id = ?').bind(token, resource.course_id).first();
           if (!enrollment) return error('Forbidden: Please enroll in this course to access this resource', 403);
         }
 
-        // 3. Stream the content
         if (resource.source_type === 'r2' || !resource.source_type) {
-          // PROXY R2 FILE: Fetch privately from bucket and stream to client
           if (!env.R2_BUCKET) return error('R2 not configured', 500);
           
           const object = await env.R2_BUCKET.get(resource.key);
@@ -739,15 +764,12 @@ export default {
           const headers = new Headers();
           object.writeHttpMetadata(headers);
           headers.set('etag', object.httpEtag);
-          // Force browser to display inline (for PDFs/Videos) instead of downloading
           headers.set('Content-Disposition', 'inline'); 
 
           return new Response(object.body, { headers });
         } 
         
         else if (resource.source_type === 'external') {
-          // MASK EXTERNAL LINK: Return a JSON payload with the processed embed URL
-          // The frontend will handle putting this into a secure iframe
           return json({ 
             data: { 
               type: resource.type, 
@@ -769,6 +791,7 @@ export default {
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
         const mentorId = path.split('/')[3];
         await env.DB.prepare('DELETE FROM mentors WHERE id = ?').bind(mentorId).run();
+        await logAudit(env, token, 'MENTOR_DELETED', `Deleted mentor ID: ${mentorId}`);
         return json({ success: true });
       }
 
@@ -778,6 +801,7 @@ export default {
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
         const courseId = path.split('/')[3];
         await env.DB.prepare('DELETE FROM courses WHERE id = ?').bind(courseId).run();
+        await logAudit(env, token, 'COURSE_DELETED', `Deleted course ID: ${courseId}`);
         return json({ success: true });
       }
 
@@ -796,6 +820,7 @@ export default {
         const userId = path.split('/')[3];
         if (userId === token) return error('Cannot delete yourself', 400);
         await env.DB.prepare('DELETE FROM users WHERE id = ?').bind(userId).run();
+        await logAudit(env, token, 'USER_DELETED', `Deleted user ID: ${userId}`);
         return json({ success: true });
       }
 

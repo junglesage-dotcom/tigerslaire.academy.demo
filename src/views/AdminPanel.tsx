@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import { sanitizeObject } from "../lib/sanitize";
 import { useStore } from "../lib/store";
+import ConfirmDialog from "../components/ConfirmDialog";
 
 export default function AdminPanel() {
   const { user, go, toast } = useStore();
   const [activeTab, setActiveTab] = useState<'applications' | 'payments' | 'installments' | 'mentors' | 'instructors' | 'courses' | 'users'>('applications');
+  
   const [apps, setApps] = useState<any[]>([]);
   const [payments, setPayments] = useState<any[]>([]);
-  const [installments, setInstallments] = useState<any[]>([]); // ADDED
+  const [installments, setInstallments] = useState<any[]>([]);
   const [mentors, setMentors] = useState<any[]>([]);
   const [instructors, setInstructors] = useState<any[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
@@ -20,6 +23,17 @@ export default function AdminPanel() {
     code: "", title: "", tagline: "", level: "Beginner", path: "Beginner → Intermediate",
     weeks: 8, price: 0, priceUsd: 0, hue: "#ffa41b", icon: "python", summary: "", outcomes: "", skills: "", channel: ""
   });
+
+  // Dialog states
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    isDestructive: boolean;
+    onConfirm: () => Promise<void> | void;
+  }>({ isOpen: false, title: "", message: "", isDestructive: false, onConfirm: () => {} });
+  
+  const [isDialogLoading, setIsDialogLoading] = useState(false);
 
   useEffect(() => {
     if (user?.role !== 'admin') {
@@ -35,7 +49,7 @@ export default function AdminPanel() {
       const [appsRes, payRes, adminInstallmentsRes, mentorsRes, instructorsRes, coursesRes, usersRes] = await Promise.all([
         api.getAllApplications(),
         api.getPendingPayments(),
-        api.getAdminInstallments(), // ADDED
+        api.getAdminInstallments(),
         api.getMentors(),
         api.getInstructors(),
         api.getCourses(),
@@ -43,7 +57,7 @@ export default function AdminPanel() {
       ]);
       setApps(appsRes.data);
       setPayments(payRes.data);
-      setInstallments(adminInstallmentsRes.data); // ADDED
+      setInstallments(adminInstallmentsRes.data);
       setMentors(mentorsRes.data);
       setInstructors(instructorsRes.data);
       setCourses(coursesRes.data);
@@ -67,11 +81,11 @@ export default function AdminPanel() {
     e.preventDefault();
     try {
       await api.addMentor({
-        ...newMentor,
+        ...sanitizeObject(newMentor),
         specialties: newMentor.specialties.split(",").map(s => s.trim()),
         userId: user?.id
       });
-      toast("Mentor added");
+      toast("Mentor added successfully");
       setNewMentor({ name: "", bio: "", specialties: "tech", hourlyRate: 0, imageUrl: "" });
       loadAll();
     } catch (e: any) {
@@ -79,27 +93,37 @@ export default function AdminPanel() {
     }
   };
 
-  const handleDeleteMentor = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this mentor?")) return;
-    try {
-      await api.deleteMentor(id);
-      toast("Mentor deleted");
-      loadAll();
-    } catch (e: any) {
-      toast(e.message);
-    }
+  const promptDeleteMentor = (id: string, name: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: "Delete Mentor",
+      message: `Are you sure you want to delete ${name}? This action cannot be undone.`,
+      isDestructive: true,
+      onConfirm: async () => {
+        setIsDialogLoading(true);
+        try {
+          await api.deleteMentor(id);
+          toast("Mentor deleted");
+          loadAll();
+        } catch (e: any) {
+          toast(e.message);
+        } finally {
+          setIsDialogLoading(false);
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
   };
 
   const handleAddInstructor = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await api.addInstructor({
-        name: newInstructor.name,
-        bio: newInstructor.bio,
+        ...sanitizeObject(newInstructor),
         courseIds: newInstructor.courseIds,
         userId: user?.id
       });
-      toast("Instructor added");
+      toast("Instructor added successfully");
       setNewInstructor({ name: "", bio: "", courseIds: [] });
       loadAll();
     } catch (e: any) {
@@ -107,58 +131,91 @@ export default function AdminPanel() {
     }
   };
 
-  const handleDeleteInstructor = async (id: string) => {
-    if (!confirm("Delete this instructor?")) return;
-    try {
-      await api.deleteInstructor(id);
-      toast("Instructor deleted");
-      loadAll();
-    } catch (e: any) {
-      toast(e.message);
-    }
+  const promptDeleteInstructor = (id: string, name: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: "Delete Instructor",
+      message: `Are you sure you want to delete ${name}? This action cannot be undone.`,
+      isDestructive: true,
+      onConfirm: async () => {
+        setIsDialogLoading(true);
+        try {
+          await api.deleteInstructor(id);
+          toast("Instructor deleted");
+          loadAll();
+        } catch (e: any) {
+          toast(e.message);
+        } finally {
+          setIsDialogLoading(false);
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
   };
 
   const handleAddCourse = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       const res = await api.createCourse({
-        ...newCourse,
+        ...sanitizeObject(newCourse),
         outcomes: newCourse.outcomes.split("\n").filter(o => o.trim()),
         skills: newCourse.skills.split(",").map(s => s.trim())
       });
-      toast("Course created! You can now edit its content.");
+      toast("Course created! Redirecting to editor...");
       go({ view: "course-editor", courseId: res.data.id } as any);
     } catch (e: any) {
       toast(e.message);
     }
   };
 
-  const handleDeleteCourse = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this course? This cannot be undone.")) return;
-    try {
-      await api.deleteCourse(id);
-      toast("Course deleted");
-      loadAll();
-    } catch (e: any) {
-      toast(e.message);
-    }
+  const promptDeleteCourse = (id: string, code: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: "Delete Course",
+      message: `Are you sure you want to delete course ${code}? This will remove it from the catalog and cannot be undone.`,
+      isDestructive: true,
+      onConfirm: async () => {
+        setIsDialogLoading(true);
+        try {
+          await api.deleteCourse(id);
+          toast("Course deleted");
+          loadAll();
+        } catch (e: any) {
+          toast(e.message);
+        } finally {
+          setIsDialogLoading(false);
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
   };
 
-  const handleDeleteUser = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this user? This will remove their account and data.")) return;
-    try {
-      await api.deleteUser(id);
-      toast("User deleted");
-      loadAll();
-    } catch (e: any) {
-      toast(e.message);
-    }
+  const promptDeleteUser = (id: string, name: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: "Delete User Account",
+      message: `Are you sure you want to permanently delete ${name}'s account and all associated data? This cannot be undone.`,
+      isDestructive: true,
+      onConfirm: async () => {
+        setIsDialogLoading(true);
+        try {
+          await api.deleteUser(id);
+          toast("User account deleted");
+          loadAll();
+        } catch (e: any) {
+          toast(e.message);
+        } finally {
+          setIsDialogLoading(false);
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
   };
 
   const tabs = [
     { id: 'applications', label: 'Applications', count: apps.filter(a => a.status === 'pending').length },
     { id: 'payments', label: 'Payments', count: payments.filter(p => p.status === 'proof_submitted').length },
-    { id: 'installments', label: 'Installments', count: installments.length }, // ADDED
+    { id: 'installments', label: 'Installments', count: installments.length },
     { id: 'mentors', label: 'Mentors', count: mentors.length },
     { id: 'instructors', label: 'Instructors', count: instructors.length },
     { id: 'courses', label: 'Courses', count: courses.length },
@@ -211,7 +268,7 @@ export default function AdminPanel() {
                       const price = parseInt((document.getElementById(`price-${app.id}`) as HTMLInputElement).value);
                       if (price) handlePropose(app.id, price);
                     }}
-                    className="rounded bg-amber px-4 py-2 text-xs font-bold uppercase text-ink"
+                    className="rounded bg-amber px-4 py-2 text-xs font-bold uppercase text-ink hover:bg-amber/90 transition-colors"
                   >
                     Propose
                   </button>
@@ -219,7 +276,7 @@ export default function AdminPanel() {
               </div>
             ))}
             {apps.filter(a => a.status === 'pending').length === 0 && (
-              <p className="text-sm text-smoke">No pending applications.</p>
+              <p className="text-sm text-smoke text-center py-8">No pending applications.</p>
             )}
           </div>
         </div>
@@ -239,22 +296,34 @@ export default function AdminPanel() {
                     {p.currency === 'USD' ? '$' : '₦'}{p.amount.toLocaleString()}
                   </p>
                   {p.proof_url && (
-                    <a href={p.proof_url} target="_blank" rel="noreferrer" className="inline-block mt-2 text-xs text-tgsky underline">
-                      View Payment Slip
+                    <a href={p.proof_url} target="_blank" rel="noreferrer" className="inline-block mt-2 text-xs text-tgsky underline hover:text-tgsky/80">
+                      View Payment Slip ↗
                     </a>
                   )}
                 </div>
                 <button
-                  onClick={async () => {
-                    try {
-                      await api.approvePayment(p.reference);
-                      toast("Payment approved and user enrolled!");
-                      loadAll();
-                    } catch (e: any) {
-                      toast(e.message);
-                    }
+                  onClick={() => {
+                    setConfirmDialog({
+                      isOpen: true,
+                      title: "Approve Payment",
+                      message: `Approve this payment and enroll ${p.user_name}?`,
+                      isDestructive: false,
+                      onConfirm: async () => {
+                        setIsDialogLoading(true);
+                        try {
+                          await api.approvePayment(p.reference);
+                          toast("Payment approved and user enrolled!");
+                          loadAll();
+                        } catch (e: any) {
+                          toast(e.message);
+                        } finally {
+                          setIsDialogLoading(false);
+                          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+                        }
+                      }
+                    });
                   }}
-                  className="self-start rounded bg-mint px-6 py-2 text-xs font-bold uppercase text-ink hover:bg-mint/90"
+                  className="self-start rounded bg-mint px-6 py-2 text-xs font-bold uppercase text-ink hover:bg-mint/90 transition-colors"
                 >
                   Approve & Enroll
                 </button>
@@ -267,7 +336,7 @@ export default function AdminPanel() {
         </div>
       )}
 
-      {/* Installments Tab (NEW) */}
+      {/* Installments Tab */}
       {activeTab === 'installments' && (
         <div className="rounded-lg border border-bone/10 bg-coal p-6">
           <h2 className="font-display text-xl font-bold text-amber mb-4">Pending Installment Proofs</h2>
@@ -279,22 +348,34 @@ export default function AdminPanel() {
                   <p className="text-xs text-smoke mt-1">Installment ID: {inst.id}</p>
                   <p className="text-sm text-amber font-bold mt-2">₦{inst.amount.toLocaleString()}</p>
                   {inst.proof_url && (
-                    <a href={inst.proof_url} target="_blank" rel="noreferrer" className="inline-block mt-2 text-xs text-tgsky underline">
-                      View Payment Slip
+                    <a href={inst.proof_url} target="_blank" rel="noreferrer" className="inline-block mt-2 text-xs text-tgsky underline hover:text-tgsky/80">
+                      View Payment Slip ↗
                     </a>
                   )}
                 </div>
                 <button
-                  onClick={async () => {
-                    try {
-                      await api.approveInstallment(inst.id);
-                      toast("Installment approved!");
-                      loadAll();
-                    } catch (e: any) {
-                      toast(e.message);
-                    }
+                  onClick={() => {
+                    setConfirmDialog({
+                      isOpen: true,
+                      title: "Approve Installment",
+                      message: `Mark this installment as paid for ${inst.user_name}?`,
+                      isDestructive: false,
+                      onConfirm: async () => {
+                        setIsDialogLoading(true);
+                        try {
+                          await api.approveInstallment(inst.id);
+                          toast("Installment approved!");
+                          loadAll();
+                        } catch (e: any) {
+                          toast(e.message);
+                        } finally {
+                          setIsDialogLoading(false);
+                          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+                        }
+                      }
+                    });
                   }}
-                  className="self-start rounded bg-mint px-6 py-2 text-xs font-bold uppercase text-ink hover:bg-mint/90"
+                  className="self-start rounded bg-mint px-6 py-2 text-xs font-bold uppercase text-ink hover:bg-mint/90 transition-colors"
                 >
                   Approve & Continue Access
                 </button>
@@ -313,17 +394,17 @@ export default function AdminPanel() {
           <div className="rounded-lg border border-bone/10 bg-coal p-6">
             <h2 className="font-display text-xl font-bold text-amber mb-4">Add Mentor</h2>
             <form onSubmit={handleAddMentor} className="space-y-3">
-              <input required placeholder="Name" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
+              <input required placeholder="Name" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
                 value={newMentor.name} onChange={e => setNewMentor({...newMentor, name: e.target.value})} />
-              <input placeholder="Image URL (e.g., https://imgur.com/...)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
+              <input placeholder="Image URL (e.g., https://imgur.com/...)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
                 value={newMentor.imageUrl} onChange={e => setNewMentor({...newMentor, imageUrl: e.target.value})} />
-              <textarea required placeholder="Bio" rows={3} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
+              <textarea required placeholder="Bio" rows={3} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
                 value={newMentor.bio} onChange={e => setNewMentor({...newMentor, bio: e.target.value})} />
-              <input placeholder="Specialties (comma-separated)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
+              <input placeholder="Specialties (comma-separated)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
                 value={newMentor.specialties} onChange={e => setNewMentor({...newMentor, specialties: e.target.value})} />
-              <input type="number" placeholder="Hourly Rate (₦)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
+              <input type="number" placeholder="Hourly Rate (₦)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
                 value={newMentor.hourlyRate} onChange={e => setNewMentor({...newMentor, hourlyRate: parseInt(e.target.value) || 0})} />
-              <button type="submit" className="w-full rounded bg-mint py-2 text-xs font-bold uppercase text-ink">Add Mentor</button>
+              <button type="submit" className="w-full rounded bg-mint py-2 text-xs font-bold uppercase text-ink hover:bg-mint/90 transition-colors">Add Mentor</button>
             </form>
           </div>
           <div className="rounded-lg border border-bone/10 bg-coal p-6">
@@ -331,11 +412,11 @@ export default function AdminPanel() {
             <div className="space-y-3">
               {mentors.map(m => (
                 <div key={m.id} className="rounded border border-bone/5 bg-ink p-3 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 flex-1">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
                     {m.image_url ? (
-                      <img src={m.image_url} alt={m.name} className="h-10 w-10 rounded-full object-cover" />
+                      <img src={m.image_url} alt={m.name} className="h-10 w-10 rounded-full object-cover shrink-0" />
                     ) : (
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber/20 text-amber font-bold">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber/20 text-amber font-bold">
                         {m.name.charAt(0)}
                       </div>
                     )}
@@ -345,9 +426,10 @@ export default function AdminPanel() {
                       <p className="text-xs text-amber mt-1">₦{m.hourly_rate?.toLocaleString()}/hr</p>
                     </div>
                   </div>
-                  <button onClick={() => handleDeleteMentor(m.id)} className="shrink-0 text-xs text-alert hover:underline font-bold">Delete</button>
+                  <button onClick={() => promptDeleteMentor(m.id, m.name)} className="shrink-0 text-xs text-alert hover:underline font-bold">Delete</button>
                 </div>
               ))}
+              {mentors.length === 0 && <p className="text-sm text-smoke text-center py-4">No mentors added yet.</p>}
             </div>
           </div>
         </div>
@@ -359,15 +441,15 @@ export default function AdminPanel() {
           <div className="rounded-lg border border-bone/10 bg-coal p-6">
             <h2 className="font-display text-xl font-bold text-amber mb-4">Add Instructor</h2>
             <form onSubmit={handleAddInstructor} className="space-y-3">
-              <input required placeholder="Name" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
+              <input required placeholder="Name" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
                 value={newInstructor.name} onChange={e => setNewInstructor({...newInstructor, name: e.target.value})} />
-              <textarea required placeholder="Bio" rows={3} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
+              <textarea required placeholder="Bio" rows={3} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
                 value={newInstructor.bio} onChange={e => setNewInstructor({...newInstructor, bio: e.target.value})} />
               <div>
                 <p className="text-xs text-smoke mb-2">Assign to courses:</p>
-                <div className="space-y-1 max-h-40 overflow-y-auto">
+                <div className="space-y-1 max-h-40 overflow-y-auto pr-2">
                   {courses.map(c => (
-                    <label key={c.id} className="flex items-center gap-2 text-sm text-bone">
+                    <label key={c.id} className="flex items-center gap-2 text-sm text-bone cursor-pointer hover:text-amber">
                       <input
                         type="checkbox"
                         checked={newInstructor.courseIds.includes(c.id)}
@@ -378,13 +460,14 @@ export default function AdminPanel() {
                             setNewInstructor({...newInstructor, courseIds: newInstructor.courseIds.filter(id => id !== c.id)});
                           }
                         }}
+                        className="accent-amber"
                       />
                       {c.code} - {c.title}
                     </label>
                   ))}
                 </div>
               </div>
-              <button type="submit" className="w-full rounded bg-mint py-2 text-xs font-bold uppercase text-ink">Add Instructor</button>
+              <button type="submit" className="w-full rounded bg-mint py-2 text-xs font-bold uppercase text-ink hover:bg-mint/90 transition-colors">Add Instructor</button>
             </form>
           </div>
           <div className="rounded-lg border border-bone/10 bg-coal p-6">
@@ -396,9 +479,10 @@ export default function AdminPanel() {
                     <p className="font-bold text-bone truncate">{i.name}</p>
                     <p className="text-xs text-smoke mt-1 truncate">{i.bio}</p>
                   </div>
-                  <button onClick={() => handleDeleteInstructor(i.id)} className="shrink-0 ml-2 text-xs text-alert hover:underline font-bold">Delete</button>
+                  <button onClick={() => promptDeleteInstructor(i.id, i.name)} className="shrink-0 ml-2 text-xs text-alert hover:underline font-bold">Delete</button>
                 </div>
               ))}
+              {instructors.length === 0 && <p className="text-sm text-smoke text-center py-4">No instructors added yet.</p>}
             </div>
           </div>
         </div>
@@ -411,36 +495,36 @@ export default function AdminPanel() {
             <h2 className="font-display text-xl font-bold text-amber mb-4">Create New Course</h2>
             <form onSubmit={handleAddCourse} className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <input required placeholder="Code (e.g., DS401)" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
+                <input required placeholder="Code (e.g., DS401)" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
                   value={newCourse.code} onChange={e => setNewCourse({...newCourse, code: e.target.value})} />
-                <input required placeholder="Title" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
+                <input required placeholder="Title" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
                   value={newCourse.title} onChange={e => setNewCourse({...newCourse, title: e.target.value})} />
               </div>
-              <input required placeholder="Tagline" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
+              <input required placeholder="Tagline" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
                 value={newCourse.tagline} onChange={e => setNewCourse({...newCourse, tagline: e.target.value})} />
               <div className="grid grid-cols-3 gap-3">
-                <select className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
+                <select className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
                   value={newCourse.level} onChange={e => setNewCourse({...newCourse, level: e.target.value})}>
                   <option>Beginner</option><option>Intermediate</option><option>Advanced</option>
                 </select>
-                <input type="number" placeholder="Weeks" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
+                <input type="number" placeholder="Weeks" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
                   value={newCourse.weeks} onChange={e => setNewCourse({...newCourse, weeks: parseInt(e.target.value) || 0})} />
-                <input type="number" placeholder="Price (₦)" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
+                <input type="number" placeholder="Price (₦)" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
                   value={newCourse.price} onChange={e => setNewCourse({...newCourse, price: parseInt(e.target.value) || 0})} />
               </div>
               <div className="grid grid-cols-1 gap-3">
-                <input type="number" placeholder="Price ($ USD)" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
+                <input type="number" placeholder="Price ($ USD)" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
                   value={newCourse.priceUsd} onChange={e => setNewCourse({...newCourse, priceUsd: parseInt(e.target.value) || 0})} />
               </div>
-              <textarea required placeholder="Summary" rows={2} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
+              <textarea required placeholder="Summary" rows={2} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
                 value={newCourse.summary} onChange={e => setNewCourse({...newCourse, summary: e.target.value})} />
-              <textarea placeholder="Outcomes (one per line)" rows={3} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
+              <textarea placeholder="Outcomes (one per line)" rows={3} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
                 value={newCourse.outcomes} onChange={e => setNewCourse({...newCourse, outcomes: e.target.value})} />
-              <input placeholder="Skills (comma-separated)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
+              <input placeholder="Skills (comma-separated)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
                 value={newCourse.skills} onChange={e => setNewCourse({...newCourse, skills: e.target.value})} />
-              <input placeholder="Telegram channel (e.g., t.me/lair_ds401)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone"
+              <input placeholder="Telegram channel (e.g., t.me/lair_ds401)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
                 value={newCourse.channel} onChange={e => setNewCourse({...newCourse, channel: e.target.value})} />
-              <button type="submit" className="w-full rounded bg-amber py-2 text-xs font-bold uppercase text-ink">Create Course</button>
+              <button type="submit" className="w-full rounded bg-amber py-2 text-xs font-bold uppercase text-ink hover:bg-amber/90 transition-colors">Create Course</button>
             </form>
           </div>
           <div className="rounded-lg border border-bone/10 bg-coal p-6">
@@ -455,19 +539,20 @@ export default function AdminPanel() {
                   <div className="flex gap-2 shrink-0 ml-2">
                     <button
                       onClick={() => go({ view: "course-editor", courseId: c.id } as any)}
-                      className="rounded bg-amber/20 px-3 py-1 text-xs font-bold text-amber hover:bg-amber/30"
+                      className="rounded bg-amber/20 px-3 py-1 text-xs font-bold text-amber hover:bg-amber/30 transition-colors"
                     >
                       Edit
                     </button>
                     <button
-                      onClick={() => handleDeleteCourse(c.id)}
-                      className="rounded bg-alert/10 px-3 py-1 text-xs font-bold text-alert hover:bg-alert/20"
+                      onClick={() => promptDeleteCourse(c.id, c.code)}
+                      className="rounded bg-alert/10 px-3 py-1 text-xs font-bold text-alert hover:bg-alert/20 transition-colors"
                     >
                       Delete
                     </button>
                   </div>
                 </div>
               ))}
+              {courses.length === 0 && <p className="text-sm text-smoke text-center py-4">No courses created yet.</p>}
             </div>
           </div>
         </div>
@@ -490,7 +575,7 @@ export default function AdminPanel() {
               </thead>
               <tbody>
                 {users.map(u => (
-                  <tr key={u.id} className="border-b border-bone/5 hover:bg-ink/50">
+                  <tr key={u.id} className="border-b border-bone/5 hover:bg-ink/50 transition-colors">
                     <td className="py-3 px-2 font-bold text-bone">{u.name}</td>
                     <td className="py-3 px-2 text-smoke">{u.email}</td>
                     <td className="py-3 px-2">
@@ -502,7 +587,7 @@ export default function AdminPanel() {
                     <td className="py-3 px-2 text-right">
                       {u.id !== user?.id && (
                         <button 
-                          onClick={() => handleDeleteUser(u.id)}
+                          onClick={() => promptDeleteUser(u.id, u.name)}
                           className="text-xs text-alert hover:underline font-bold"
                         >
                           Delete
@@ -517,6 +602,17 @@ export default function AdminPanel() {
           </div>
         </div>
       )}
+
+      {/* Global Confirm Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        isDestructive={confirmDialog.isDestructive}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+        isLoading={isDialogLoading}
+      />
     </div>
   );
 }
