@@ -31,14 +31,16 @@ export const api = {
   getCourses: () => request<{ data: any[] }>('/api/courses'),
   getCourse: (id: string) => request<{ data: any }>(`/api/courses/${id}`),
 
-  register: (name: string, email: string) =>
+  // UPDATED: Now requires a password
+  register: (name: string, email: string, password: string) =>
     request<{ data: any; token: string }>('/api/auth/register', {
-      method: 'POST', body: JSON.stringify({ name, email })
+      method: 'POST', body: JSON.stringify({ name, email, password })
     }).then(res => { setToken(res.token); return res; }),
 
-  login: (email: string) =>
+  // UPDATED: Now requires a password
+  login: (email: string, password: string) =>
     request<{ data: any; token: string }>('/api/auth/login', {
-      method: 'POST', body: JSON.stringify({ email })
+      method: 'POST', body: JSON.stringify({ email, password })
     }).then(res => { setToken(res.token); return res; }),
 
   loginDemo: () =>
@@ -170,16 +172,13 @@ export const api = {
   getResources: (courseId: string, lessonId: string) =>
     request<{ data: any[] }>(`/api/courses/${courseId}/lessons/${lessonId}/resources`),
   
-  // NEW: Hybrid Upload (Handles both R2 Files AND External URLs)
   uploadResource: async (file: File | null, externalUrl: string | null, courseId: string, lessonId: string, type: string) => {
     const token = getToken();
     
-    // If it's an external URL, we just return it directly to be saved in the DB
     if (externalUrl) {
       return { success: true, data: { url: externalUrl, type, name: 'External Link', sourceType: 'external' } };
     }
 
-    // If it's a file, upload to R2
     if (!file) throw new Error('No file or URL provided');
     
     const formData = new FormData();
@@ -202,7 +201,6 @@ export const api = {
     return data;
   },
 
-  // Secure Resource Streaming
   getResourceStreamData: (resourceId: string) =>
     request<{ data: any }>(`/api/resources/stream/${resourceId}`),
 
@@ -244,4 +242,6 @@ export const api = {
     request<{ success: boolean }>('/api/installments/approve', {
       method: 'POST', body: JSON.stringify({ installmentId, adminToken: getToken() })
     }),
+
+  getAnalytics: () => request<{ data: any }>('/api/admin/analytics'),
 };

@@ -36,26 +36,22 @@ async function verifyTelegramInitData(initData, botToken) {
 function getEmbedUrl(url, type) {
   if (!url) return null;
   
-  // YouTube
   const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\s?]+)/);
   if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}?rel=0&modestbranding=1`;
 
-  // Vimeo
   const vimeoMatch = url.match(/vimeo\.com\/(\d+)/);
   if (vimeoMatch) return `https://player.vimeo.com/video/${vimeoMatch[1]}`;
 
-  // Google Drive (PDFs/Docs)
   if (url.includes('drive.google.com')) {
     const driveMatch = url.match(/\/file\/d\/([^/]+)/);
     if (driveMatch) return `https://docs.google.com/viewer?url=https://drive.google.com/uc?id=${driveMatch[1]}&embedded=true`;
   }
 
-  // Fallback: If it's a direct PDF link from another server, use Google Docs Viewer to mask it
   if (type === 'document' && url.endsWith('.pdf')) {
     return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
   }
 
-  return url; // Return original if no embed pattern matches
+  return url;
 }
 
 // Helper to log admin actions for security and accountability
@@ -67,8 +63,16 @@ async function logAudit(env, adminId, action, details) {
     ).bind(id, adminId, action, details, Date.now()).run();
   } catch (e) {
     console.error('Failed to log audit:', e);
-    // Fail silently so it doesn't break the main action
   }
+}
+
+// NEW: Helper to securely hash passwords using SHA-256
+async function hashPassword(password) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 export default {
@@ -279,14 +283,19 @@ export default {
       }
 
       // ============================================
-      // AUTH API
+      // AUTH API (UPDATED WITH PASSWORD HASHING)
       // ============================================
       if (path === '/api/auth/register' && method === 'POST') {
-        const { name, email } = await request.json();
+        const { name, email, password } = await request.json();
+        if (!password || password.length < 6) return error('Password must be at least 6 characters', 400);
+        
         const id = 'st_' + uid();
+        const passwordHash = await hashPassword(password);
+        
         try {
-          await env.DB.prepare('INSERT INTO users (id, name, email, joined_at) VALUES (?, ?, ?, ?)').bind(id, name, email, Date.now()).run();
-          const user = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(id).first();
+          await env.DB.prepare('INSERT INTO users (id, name, email, password_hash, joined_at) VALUES (?, ?, ?, ?, ?)')
+            .bind(id, name, email, passwordHash, Date.now()).run();
+          const user = await env.DB.prepare('SELECT id, name, email, role, joined_at FROM users WHERE id = ?').bind(id).first();
           return json({ data: user, token: id });
         } catch (e) {
           return error('Email already registered', 400);
@@ -294,10 +303,18 @@ export default {
       }
 
       if (path === '/api/auth/login' && method === 'POST') {
-        const { email } = await request.json();
+        const { email, password } = await request.json();
         const user = await env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(email).first();
-        if (!user) return error('User not found', 404);
-        return json({ data: user, token: user.id });
+        
+        if (!user) return error('Invalid email or password', 401);
+        
+        const inputHash = await hashPassword(password);
+        if (inputHash !== user.password_hash) {
+          return error('Invalid email or password', 401);
+        }
+        
+        const { password_hash, ...safeUser } = user;
+        return json({ data: safeUser, token: user.id });
       }
 
       if (path === '/api/auth/demo' && method === 'POST') {
@@ -315,7 +332,7 @@ export default {
       if (path === '/api/user/me' && method === 'GET') {
         const token = getToken();
         if (!token) return error('Unauthorized', 401);
-        const user = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(token).first();
+        const user = await env.DB.prepare('SELECT id, name, email, role, telegram_id, joined_at FROM users WHERE id = ?').bind(token).first();
         if (!user) return error('User not found', 404);
         return json({ data: user });
       }
@@ -506,6 +523,33 @@ export default {
         if (!token) return error('Unauthorized', 401);
         const rsvps = await env.DB.prepare(`SELECT m.*, r.status as rsvp_status FROM meetups m JOIN meetup_attendees r ON m.id = r.meetup_id WHERE r.user_id = ? AND m.scheduled_at > ? ORDER BY m.scheduled_at ASC`).bind(token, Date.now()).all();
         return json({ data: rsvps.results });
+      }
+
+      // ============================================
+      // ADMIN ANALYTICS DASHBOARD
+      // ============================================
+      if (path === '/api/admin/analytics' && method === 'GET') {
+        const token = getToken();
+        const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
+        if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
+
+        const [revenueData, studentsData, coursesData, appsData, recentUsers] = await Promise.all([
+          env.DB.prepare("SELECT SUM(amount) as total FROM payments WHERE status = 'paid'").first(),
+          env.DB.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'student'").first(),
+          env.DB.prepare("SELECT COUNT(*) as count FROM courses").first(),
+          env.DB.prepare("SELECT COUNT(*) as count FROM mentorship_applications WHERE status = 'pending'").first(),
+          env.DB.prepare("SELECT id, name, email, joined_at FROM users WHERE role = 'student' ORDER BY joined_at DESC LIMIT 5").all()
+        ]);
+
+        return json({
+          data: {
+            totalRevenue: revenueData.total || 0,
+            totalStudents: studentsData.count || 0,
+            totalCourses: coursesData.count || 0,
+            pendingApplications: appsData.count || 0,
+            recentStudents: recentUsers.results || []
+          }
+        });
       }
 
       // ============================================
@@ -730,7 +774,6 @@ export default {
 
         await env.R2_BUCKET.put(key, file, { httpMetadata: { contentType: file.type } });
 
-        // TODO: REPLACE WITH YOUR ACTUAL R2 PUBLIC URL (e.g., https://pub-xxxxxx.r2.dev)
         const publicUrl = `https://pub-xxxxxxxxxxxxxxxx.r2.dev/${key}`; 
 
         return json({ 

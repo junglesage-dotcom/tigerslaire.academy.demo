@@ -6,7 +6,9 @@ import ConfirmDialog from "../components/ConfirmDialog";
 
 export default function AdminPanel() {
   const { user, go, toast } = useStore();
-  const [activeTab, setActiveTab] = useState<'applications' | 'payments' | 'installments' | 'mentors' | 'instructors' | 'courses' | 'users'>('applications');
+  
+  // Added 'analytics' to the activeTab type
+  const [activeTab, setActiveTab] = useState<'analytics' | 'applications' | 'payments' | 'installments' | 'mentors' | 'instructors' | 'courses' | 'users'>('analytics');
   
   const [apps, setApps] = useState<any[]>([]);
   const [payments, setPayments] = useState<any[]>([]);
@@ -15,6 +17,15 @@ export default function AdminPanel() {
   const [instructors, setInstructors] = useState<any[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  
+  // NEW: Analytics State
+  const [analytics, setAnalytics] = useState<any>({ 
+    totalRevenue: 0, 
+    totalStudents: 0, 
+    totalCourses: 0, 
+    pendingApplications: 0, 
+    recentStudents: [] 
+  });
 
   // Form states
   const [newMentor, setNewMentor] = useState({ name: "", bio: "", specialties: "tech", hourlyRate: 0, imageUrl: "" });
@@ -46,7 +57,9 @@ export default function AdminPanel() {
 
   const loadAll = async () => {
     try {
-      const [appsRes, payRes, adminInstallmentsRes, mentorsRes, instructorsRes, coursesRes, usersRes] = await Promise.all([
+      // Added api.getAnalytics() to the Promise.all array
+      const [analyticsRes, appsRes, payRes, adminInstallmentsRes, mentorsRes, instructorsRes, coursesRes, usersRes] = await Promise.all([
+        api.getAnalytics(),
         api.getAllApplications(),
         api.getPendingPayments(),
         api.getAdminInstallments(),
@@ -55,6 +68,8 @@ export default function AdminPanel() {
         api.getCourses(),
         api.getUsers()
       ]);
+      
+      setAnalytics(analyticsRes.data);
       setApps(appsRes.data);
       setPayments(payRes.data);
       setInstallments(adminInstallmentsRes.data);
@@ -213,6 +228,7 @@ export default function AdminPanel() {
   };
 
   const tabs = [
+    { id: 'analytics', label: 'Analytics', icon: '📊' }, // NEW
     { id: 'applications', label: 'Applications', count: apps.filter(a => a.status === 'pending').length },
     { id: 'payments', label: 'Payments', count: payments.filter(p => p.status === 'proof_submitted').length },
     { id: 'installments', label: 'Installments', count: installments.length },
@@ -232,14 +248,84 @@ export default function AdminPanel() {
           <button
             key={t.id}
             onClick={() => setActiveTab(t.id)}
-            className={`px-4 py-2 font-display text-sm font-bold transition-colors whitespace-nowrap ${
+            className={`flex items-center gap-2 px-4 py-2 font-display text-sm font-bold transition-colors whitespace-nowrap ${
               activeTab === t.id ? 'text-amber border-b-2 border-amber' : 'text-smoke hover:text-bone'
             }`}
           >
+            {t.icon && <span>{t.icon}</span>}
             {t.label} {t.count > 0 && <span className="ml-1 rounded bg-amber/20 px-1.5 py-0.5 text-[10px] text-amber">{t.count}</span>}
           </button>
         ))}
       </div>
+
+      {/* ==========================================
+          ANALYTICS TAB (NEW)
+      ========================================== */}
+      {activeTab === 'analytics' && (
+        <div className="space-y-8">
+          {/* Key Metrics Grid */}
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-xl border border-bone/10 bg-coal p-6">
+              <p className="text-xs font-bold uppercase tracking-widest text-smoke mb-2">Total Revenue</p>
+              <p className="font-display text-3xl font-extrabold text-mint">
+                ₦{analytics.totalRevenue.toLocaleString()}
+              </p>
+              <p className="text-xs text-smoke mt-2">From successful payments</p>
+            </div>
+            
+            <div className="rounded-xl border border-bone/10 bg-coal p-6">
+              <p className="text-xs font-bold uppercase tracking-widest text-smoke mb-2">Total Students</p>
+              <p className="font-display text-3xl font-extrabold text-tgsky">
+                {analytics.totalStudents.toLocaleString()}
+              </p>
+              <p className="text-xs text-smoke mt-2">Registered learners</p>
+            </div>
+
+            <div className="rounded-xl border border-bone/10 bg-coal p-6">
+              <p className="text-xs font-bold uppercase tracking-widest text-smoke mb-2">Active Courses</p>
+              <p className="font-display text-3xl font-extrabold text-amber">
+                {analytics.totalCourses}
+              </p>
+              <p className="text-xs text-smoke mt-2">Published to catalog</p>
+            </div>
+
+            <div className="rounded-xl border border-bone/10 bg-coal p-6">
+              <p className="text-xs font-bold uppercase tracking-widest text-smoke mb-2">Pending Mentorships</p>
+              <p className="font-display text-3xl font-extrabold text-ember">
+                {analytics.pendingApplications}
+              </p>
+              <p className="text-xs text-smoke mt-2">Awaiting your review</p>
+            </div>
+          </div>
+
+          {/* Recent Activity / Signups */}
+          <div className="rounded-xl border border-bone/10 bg-coal p-6">
+            <h2 className="font-display text-xl font-bold text-amber mb-4">Recent Student Signups</h2>
+            {analytics.recentStudents.length === 0 ? (
+              <p className="text-sm text-smoke text-center py-4">No recent signups.</p>
+            ) : (
+              <div className="space-y-3">
+                {analytics.recentStudents.map((student: any) => (
+                  <div key={student.id} className="flex items-center justify-between rounded-lg border border-bone/5 bg-ink p-4">
+                    <div className="flex items-center gap-4">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber/20 text-amber font-bold">
+                        {student.name.charAt(0)}
+                      </div>
+                      <div>
+                        <p className="font-bold text-bone">{student.name}</p>
+                        <p className="text-xs text-smoke">{student.email}</p>
+                      </div>
+                    </div>
+                    <p className="text-xs text-smoke">
+                      Joined {new Date(student.joined_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Applications Tab */}
       {activeTab === 'applications' && (
