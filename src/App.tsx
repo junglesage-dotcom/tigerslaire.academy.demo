@@ -11,7 +11,8 @@ import CounselingBook from "./views/CounselingBook";
 import Meetups from "./views/Meetups";
 import AdminPanel from "./views/AdminPanel";
 import CourseEditor from "./views/CourseEditor";
-import LegalPage from "./views/LegalPage"; // ✅ NEW: Dedicated Legal Pages
+import LegalPage from "./views/LegalPage";
+import VerifyCertificate from "./views/VerifyCertificate"; // ✅ NEW
 import { AuthModal } from "./components/Modals";
 import { IconClaw, IconMenu, IconX, IconPlane } from "./components/Icons";
 import CookieConsent from "./components/CookieConsent";
@@ -160,7 +161,7 @@ function Nav() {
 }
 
 // ============================================
-// FOOTER (WITH LEGAL PAGE ROUTING)
+// FOOTER (WITH LEGAL PAGE & VERIFY ROUTING)
 // ============================================
 function Footer() {
   const { go } = useStore();
@@ -229,7 +230,6 @@ function Footer() {
               { l: "Data Protection (NDPR)", id: "ndpr" },
             ].map((x) => (
               <li key={x.id}>
-                {/* ✅ UPDATED: Navigates to the dedicated Legal Page */}
                 <button 
                   onClick={() => go({ view: "legal", type: x.id } as any)} 
                   className="text-smoke transition-colors hover:text-amber text-left"
@@ -238,6 +238,15 @@ function Footer() {
                 </button>
               </li>
             ))}
+            {/* ✅ NEW: Certificate Verification Link */}
+            <li className="pt-2 mt-2 border-t border-bone/5">
+              <button 
+                onClick={() => go({ view: "verify" } as any)} 
+                className="text-amber font-bold transition-colors hover:text-bone text-left"
+              >
+                ✓ Verify a Certificate
+              </button>
+            </li>
           </ul>
           
           <div className="mt-6 pt-6 border-t border-bone/10">
@@ -280,7 +289,14 @@ function Toasts() {
 // MAIN SHELL
 // ============================================
 function Shell() {
-  const { route, authOpen } = useStore();
+  const { route, authOpen, go } = useStore();
+
+  // ✅ NEW: support share links like https://yoursite/?verify=TL-PY101-483920
+  useEffect(() => {
+    const v = new URLSearchParams(window.location.search).get("verify");
+    if (v) go({ view: "verify", certId: v } as any);
+  }, [go]);
+
   return (
     <div className="relative min-h-screen">
       <div className="noise-layer" aria-hidden />
@@ -299,7 +315,8 @@ function Shell() {
         {route.view === "admin" && <AdminPanel />}
         {route.view === "course-editor" && <CourseEditor courseId={route.courseId} />}
         
-        {/* ✅ NEW: Dedicated Legal Pages Routing */}
+        {/* ✅ NEW: Certificate Verification & Legal Pages Routing */}
+        {route.view === "verify" && <VerifyCertificate certId={route.certId as string | undefined} />}
         {route.view === "legal" && <LegalPage type={route.type as any} />}
       </main>
       <Footer />

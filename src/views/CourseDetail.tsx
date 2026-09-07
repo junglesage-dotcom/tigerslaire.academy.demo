@@ -22,13 +22,12 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
   const [showCheckout, setShowCheckout] = useState(false);
   const [currency, setCurrency] = useState<'NGN' | 'USD'>('NGN');
   const [lessonResources, setLessonResources] = useState<Record<string, any[]>>({});
-  const [downloadingCert, setDownloadingCert] = useState(false); // ✅ NEW
+  const [downloadingCert, setDownloadingCert] = useState(false);
 
   useEffect(() => {
     loadCourse();
   }, [courseId]);
 
-  // ✅ NEW: Native Telegram Mini App back button
   useEffect(() => bindBackButton(() => go({ view: "courses" })), [go]);
 
   const loadCourse = async () => {
@@ -50,7 +49,6 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
     }
   };
 
-  // Load resources when course loads:
   useEffect(() => {
     if (!course) return;
     course.modules.forEach(async (m: any) => {
@@ -71,10 +69,10 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
     try {
       await markComplete(courseId, lessonId);
       setCompletedLessons([...completedLessons, lessonId]);
-      haptic('success'); // ✅ NEW
+      haptic('success');
       toast("✓ " + lessonTitle);
     } catch (e: any) {
-      haptic('error'); // ✅ NEW
+      haptic('error');
       toast(e.message || "Failed to mark lesson");
     }
   };
@@ -110,19 +108,18 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
       await submitQuiz(courseId, score, total);
       setQuizScore({ score, total, passed });
       setQuizSubmitted(true);
-      haptic(passed ? 'success' : 'error'); // ✅ NEW
+      haptic(passed ? 'success' : 'error');
       if (passed) {
         toast("🎉 Quiz passed! You're one step from your certificate.");
       } else {
         toast("Quiz not passed. You need 70% to pass. Review and try again.");
       }
     } catch (e: any) {
-      haptic('error'); // ✅ NEW
+      haptic('error');
       toast(e.message || "Failed to submit quiz");
     }
   };
 
-  // ✅ NEW: Real PDF certificate generation
   const downloadCertificate = async () => {
     const element = document.getElementById('certificate-canvas');
     if (!element) return;
@@ -149,9 +146,10 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
     }
   };
 
-  // ✅ NEW: Copy branded share text
+  // ✅ UPDATED: Includes the verification deep-link
   const shareCertificate = async () => {
-    const text = `🐯 I just completed "${course.title}" (${course.code}) at Tiger's Lair Academy! Certificate ID: ${certificateId}`;
+    const verifyUrl = `${window.location.origin}/?verify=${certificateId}`;
+    const text = `🐯 I just completed "${course.title}" (${course.code}) at Tiger's Lair Academy! Certificate ID: ${certificateId}\nVerify: ${verifyUrl}`;
     try {
       await navigator.clipboard.writeText(text);
       toast("Share text copied to clipboard!");
@@ -160,11 +158,11 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
     }
   };
 
-  // ✅ NEW: Native Telegram share sheet
+  // ✅ UPDATED: Includes the verification deep-link
   const shareOnTelegram = () => {
-    const url = 'https://tigerslair.academy';
+    const verifyUrl = `${window.location.origin}/?verify=${certificateId}`;
     const text = `I just completed "${course.title}" (${course.code}) at Tiger's Lair Academy! 🐯 Certificate ID: ${certificateId}`;
-    window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`, '_blank');
+    window.open(`https://t.me/share/url?url=${encodeURIComponent(verifyUrl)}&text=${encodeURIComponent(text)}`, '_blank');
   };
 
   const stats = useMemo(() => {
@@ -407,7 +405,6 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
                       All course materials — videos, PDFs, assignments, and announcements — are delivered directly to your private Telegram channel.
                     </p>
                     <p className="font-mono text-sm text-tgsky">{course.channel}</p>
-                    {/* ✅ NEW: Bot-powered channel invite */}
                     {enrolled ? (
                       course.channel ? (
                         <button
@@ -818,7 +815,7 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
             </div>
           ) : (
             <div className="space-y-6">
-              {/* Certificate Preview (✅ id added for PDF capture) */}
+              {/* Certificate Preview */}
               <div
                 id="certificate-canvas"
                 className="relative overflow-hidden rounded-2xl border-4 p-12 text-center"

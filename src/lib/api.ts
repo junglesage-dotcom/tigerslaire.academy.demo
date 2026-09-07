@@ -50,7 +50,7 @@ export const api = {
       method: 'POST', body: JSON.stringify({ name, email })
     }).then(res => { setToken(res.token); return res; }),
 
-  // ✅ NEW: Password Reset Flow
+  // ✅ Password Reset Flow
   forgotPassword: (email: string) =>
     request<{ success: boolean; message: string; dev_otp?: string }>('/api/auth/forgot-password', {
       method: 'POST', body: JSON.stringify({ email })
@@ -149,7 +149,7 @@ export const api = {
       method: 'PUT', body: JSON.stringify({ price, mentorId, firstSessionDate, notes })
     }),
 
-  // ✅ UPDATED: User Search
+  // ✅ User Search
   getUsers: (search?: string) => 
     request<{ data: any[] }>(`/api/admin/users${search ? `?search=${encodeURIComponent(search)}` : ''}`),
   deleteUser: (id: string) =>
@@ -184,7 +184,7 @@ export const api = {
     request<{ success: boolean }>(`/api/admin/courses/${courseId}/quiz`, {
       method: 'POST', body: JSON.stringify(data)
     }),
-  // ✅ NEW: Quiz Question Editor
+  // ✅ Quiz Question Editor
   updateQuizQuestion: (courseId: string, questionId: string, data: any) =>
     request<{ success: boolean }>(`/api/admin/courses/${courseId}/quiz/${questionId}`, {
       method: 'PUT', body: JSON.stringify(data)
@@ -262,6 +262,10 @@ export const api = {
   getAnalytics: () => request<{ data: any }>('/api/admin/analytics'),
   getStudentProgress: () => request<{ data: any[] }>('/api/admin/student-progress'),
   
-  // ✅ NEW: Audit Logs
+  // ✅ Audit Logs
   getAuditLogs: () => request<{ data: any[] }>('/api/admin/audit-logs'),
+
+  // ✅ NEW: Public Certificate Verification (No auth required)
+  verifyCertificate: (certId: string) =>
+    request<{ valid: boolean; data?: any }>(`/api/certificates/${encodeURIComponent(certId)}`),
 };

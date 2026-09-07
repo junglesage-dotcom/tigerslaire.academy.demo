@@ -575,6 +575,17 @@ export default {
       }
 
       // ============================================
+      // ✅ NEW: PUBLIC CERTIFICATE VERIFICATION (no auth required)
+      // ============================================
+      if (path.startsWith('/api/certificates/') && method === 'GET') {
+        const certId = decodeURIComponent(parts[2] || '');
+        const cert = await env.DB.prepare(`SELECT c.id, c.holder_name, c.score, c.total, c.issued_at, co.code AS course_code, co.title AS course_title
+          FROM certificates c JOIN courses co ON co.id = c.course_id WHERE c.id = ?`).bind(certId).first();
+        if (!cert) return json({ valid: false });
+        return json({ valid: true, data: cert });
+      }
+
+      // ============================================
       // PASSWORD RESET FLOW
       // ============================================
       if (path === '/api/auth/forgot-password' && method === 'POST') {
@@ -678,12 +689,27 @@ export default {
         } catch (e) { return error('Already completed', 400); }
       }
 
+      // ✅ ENHANCED: Quiz submission now also issues server-side certificates
       if (path === '/api/quiz/submit' && method === 'POST') {
         const token = getToken();
         if (!token) return error('Unauthorized', 401);
         const { courseId, score, total } = await request.json();
         const passed = score / total >= 0.7 ? 1 : 0;
         await env.DB.prepare('UPDATE enrollments SET quiz_score = ?, quiz_total = ?, quiz_passed = ? WHERE user_id = ? AND course_id = ?').bind(score, total, passed, token, courseId).run();
+
+        // Issue certificate when passed AND all lessons are complete
+        if (passed) {
+          try {
+            const course = await env.DB.prepare('SELECT code FROM courses WHERE id = ?').bind(courseId).first();
+            const totals = await env.DB.prepare('SELECT (SELECT COUNT(*) FROM lessons WHERE course_id = ?) AS lessons, (SELECT COUNT(*) FROM lesson_completions lc JOIN lessons l ON l.id = lc.lesson_id WHERE l.course_id = ? AND lc.user_id = ?) AS done').bind(courseId, courseId, token).first();
+            if (course && totals && totals.lessons > 0 && totals.done >= totals.lessons) {
+              const serial = (token + courseId).split('').reduce((a, ch) => a + ch.charCodeAt(0), 0);
+              const certId = 'TL-' + course.code + '-' + String(serial * 7).slice(-6);
+              const holder = await env.DB.prepare('SELECT name FROM users WHERE id = ?').bind(token).first();
+              await env.DB.prepare('INSERT OR IGNORE INTO certificates (id, user_id, course_id, holder_name, score, total, issued_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(certId, token, courseId, holder?.name || 'Student', score, total, Date.now()).run();
+            }
+          } catch (e) { console.error('Certificate issue failed:', e); }
+        }
         return json({ passed: !!passed });
       }
 
@@ -947,6 +973,7 @@ export default {
         return json({ data: { id: result.meta.last_row_id } });
       }
 
+      // ✅ ENHANCED: Lesson creation now broadcasts to the course's Telegram channel
       if (path.match(/\/api\/admin\/courses\/[^/]+\/lessons/) && method === 'POST') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
@@ -956,6 +983,22 @@ export default {
         const lessonId = id || 'les_' + uid();
         await env.DB.prepare(`INSERT INTO lessons (id, module_id, course_id, title, minutes, tags, bullets, msg, youtube_url, order_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(lessonId, moduleId, courseId, title, minutes, JSON.stringify(tags || []), JSON.stringify(bullets || []), msg || 0, youtubeUrl || null, orderIndex || 99).run();
         await logAudit(env, token, 'LESSON_CREATED', `Created lesson in course ID: ${courseId}`);
+
+        // Broadcast the lesson drop to the course's Telegram channel
+        try {
+          const course = await env.DB.prepare('SELECT code, title, channel FROM courses WHERE id = ?').bind(courseId).first();
+          if (course && course.channel) {
+            const raw = course.channel.trim();
+            const target = /^@/.test(raw) || /^-?\d/.test(raw) ? raw : '@' + raw.replace(/^https?:\/\//, '').replace(/^t\.me\//, '');
+            await tgApi(env, 'sendMessage', {
+              chat_id: target,
+              parse_mode: 'Markdown',
+              disable_web_page_preview: true,
+              text: `📚 *New Lesson Drop — ${course.code}*\n\n*${title}*\n_Course: ${course.title}_\n\nOpen the Academy Mini App or dashboard to start learning. 🐯`,
+            });
+          }
+        } catch (e) { console.error('Lesson broadcast failed:', e); }
+
         return json({ data: { id: lessonId } });
       }
 
@@ -998,7 +1041,7 @@ export default {
         return json({ success: true });
       }
 
-      // ✅ NEW: Quiz Question Editor (Update & Delete)
+      // ✅ Quiz Question Editor (Update & Delete)
       if (path.match(/\/api\/admin\/courses\/[^/]+\/quiz\/[^/]+/) && method === 'PUT') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
@@ -1170,7 +1213,7 @@ export default {
         return json({ success: true });
       }
 
-      // ✅ NEW: Audit Logs Viewer
+      // ✅ Audit Logs Viewer
       if (path === '/api/admin/audit-logs' && method === 'GET') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
@@ -1179,7 +1222,7 @@ export default {
         return json({ data: logs.results });
       }
 
-      // ✅ UPDATED: User Search
+      // ✅ User Search
       if (path === '/api/admin/users' && method === 'GET') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { useStore } from "../lib/store";
+import QuizEditor from "../components/QuizEditor"; // ✅ NEW
 
 export default function CourseEditor() {
   const { route, go, user, toast } = useStore();
@@ -290,6 +291,11 @@ export default function CourseEditor() {
             )}
           </div>
         ))}
+      </div>
+
+      {/* ✅ NEW: Gate Quiz Editor */}
+      <div className="mt-8">
+        <QuizEditor courseId={courseId!} quiz={course.quiz || []} onChanged={loadCourse} />
       </div>
     </div>
   );
