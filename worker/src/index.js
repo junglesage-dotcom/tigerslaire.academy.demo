@@ -408,7 +408,7 @@ export default {
           { command: 'status', description: 'My account status' },
           { command: 'help', description: 'Help & commands' },
         ] }) }).then(r => r.json());
-        const setMenu = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/setChatMenuButton`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ menu_button: { type: 'web_app', url: appUrl } }) }).then(r => r.json());
+        const setMenu = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/setChatMenuButton`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ menu_button: { type: 'web_app', text: 'Launch Academy', web_app: { url: appUrl } } }) }).then(r => r.json());
         return json({ setWebhook, setCommands, setMenu });
       }
 
