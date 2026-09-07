@@ -11,7 +11,12 @@ not_found_handling = "single-page-application"
 [vars]
 PAYSTACK_SECRET_KEY = "sk_live_YOUR_ACTUAL_LIVE_PAYSTACK_SECRET_KEY_HERE"
 BOT_TOKEN = "8954408184:AAEQ5fXqqQDvVa6IkXOqGKUPhdkCGB471Eo"
-
+BOT_USERNAME = "jsagebutlerbot"
+ADMIN_CHANNEL_ID = "-1004315180917"      # your private admin channel/chat id
+ADMIN_IDS = "784512390"                   # comma-separated numeric TG ids of admins
+MINI_APP_URL = "https://t.me/jsagebutlerbot/TigersLairAcademy"
+SITE_URL = "https://tigerslair-api.ehisferguson.workers.dev/"
+TG_WEBHOOK_SECRET = "a-long-random-string-here"
 [triggers]
 crons = ["0 2 * * *"]
 

@@ -79,6 +79,12 @@ export const api = {
   unlinkTelegram: () => request<{ success: boolean }>('/api/telegram/unlink', { method: 'POST' }),
   getCommunity: () => request<{ data: any }>('/api/telegram/community'),
 
+  // ✅ NEW: Trigger Telegram Bot Webhook & Commands Setup
+  setupTelegramBot: () =>
+    request<{ setWebhook: any; setCommands: any; setMenu: any }>('/api/telegram/setup-webhook', {
+      method: 'POST'
+    }),
+
   getCategories: () => request<{ data: any[] }>('/api/mentorship/categories'),
   getMentors: () => request<{ data: any[] }>('/api/mentors'),
   applyMentorship: (data: any) =>
@@ -187,8 +193,15 @@ export const api = {
     return data;
   },
 
+  // Fetches JSON metadata/embed URLs for external resources
   getResourceStreamData: (resourceId: string) =>
     request<{ data: any }>(`/api/resources/stream/${resourceId}`),
+
+  // ✅ NEW: Generates a secure, token-authenticated URL for native <video> and <audio> tags
+  getResourceStreamUrl: (resourceId: string) => {
+    const token = getToken();
+    return `${API_BASE}/api/resources/stream/${resourceId}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+  },
 
   createResource: (data: any) =>
     request<{ data: any }>('/api/admin/resources', {
