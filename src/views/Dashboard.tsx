@@ -55,7 +55,7 @@ export default function Dashboard() {
       const initData = (window as any).Telegram.WebApp.initData;
       linkTelegram(initData);
     } else {
-      window.open(`https://t.me/TigersLair_bot?start=link_${user.id}`, '_blank');
+      window.open(`https://t.me/jsagebutlerbot?start=link_${user.id}`, '_blank');
       toast("Please start a chat with the bot to complete linking.");
     }
   };

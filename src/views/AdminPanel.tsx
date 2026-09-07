@@ -7,8 +7,8 @@ import ConfirmDialog from "../components/ConfirmDialog";
 export default function AdminPanel() {
   const { user, go, toast } = useStore();
   
-  // Added 'analytics' to the activeTab type
-  const [activeTab, setActiveTab] = useState<'analytics' | 'applications' | 'payments' | 'installments' | 'mentors' | 'instructors' | 'courses' | 'users'>('analytics');
+  // Added 'progress' to the activeTab type
+  const [activeTab, setActiveTab] = useState<'analytics' | 'progress' | 'applications' | 'payments' | 'installments' | 'mentors' | 'instructors' | 'courses' | 'users'>('analytics');
   
   const [apps, setApps] = useState<any[]>([]);
   const [payments, setPayments] = useState<any[]>([]);
@@ -17,8 +17,9 @@ export default function AdminPanel() {
   const [instructors, setInstructors] = useState<any[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  const [progress, setProgress] = useState<any[]>([]); // NEW: Student Progress State
   
-  // NEW: Analytics State
+  // Analytics State
   const [analytics, setAnalytics] = useState<any>({ 
     totalRevenue: 0, 
     totalStudents: 0, 
@@ -57,8 +58,8 @@ export default function AdminPanel() {
 
   const loadAll = async () => {
     try {
-      // Added api.getAnalytics() to the Promise.all array
-      const [analyticsRes, appsRes, payRes, adminInstallmentsRes, mentorsRes, instructorsRes, coursesRes, usersRes] = await Promise.all([
+      // Added api.getStudentProgress() to the Promise.all array
+      const [analyticsRes, appsRes, payRes, adminInstallmentsRes, mentorsRes, instructorsRes, coursesRes, usersRes, progressRes] = await Promise.all([
         api.getAnalytics(),
         api.getAllApplications(),
         api.getPendingPayments(),
@@ -66,7 +67,8 @@ export default function AdminPanel() {
         api.getMentors(),
         api.getInstructors(),
         api.getCourses(),
-        api.getUsers()
+        api.getUsers(),
+        api.getStudentProgress() // NEW
       ]);
       
       setAnalytics(analyticsRes.data);
@@ -77,6 +79,7 @@ export default function AdminPanel() {
       setInstructors(instructorsRes.data);
       setCourses(coursesRes.data);
       setUsers(usersRes.data);
+      setProgress(progressRes.data); // NEW
     } catch (e) {
       toast("Failed to load admin data");
     }
@@ -228,7 +231,8 @@ export default function AdminPanel() {
   };
 
   const tabs = [
-    { id: 'analytics', label: 'Analytics', icon: '📊' }, // NEW
+    { id: 'analytics', label: 'Analytics', icon: '📊' },
+    { id: 'progress', label: 'Student Progress', count: progress.length }, // NEW
     { id: 'applications', label: 'Applications', count: apps.filter(a => a.status === 'pending').length },
     { id: 'payments', label: 'Payments', count: payments.filter(p => p.status === 'proof_submitted').length },
     { id: 'installments', label: 'Installments', count: installments.length },
@@ -259,11 +263,10 @@ export default function AdminPanel() {
       </div>
 
       {/* ==========================================
-          ANALYTICS TAB (NEW)
+          ANALYTICS TAB
       ========================================== */}
       {activeTab === 'analytics' && (
         <div className="space-y-8">
-          {/* Key Metrics Grid */}
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-xl border border-bone/10 bg-coal p-6">
               <p className="text-xs font-bold uppercase tracking-widest text-smoke mb-2">Total Revenue</p>
@@ -298,7 +301,6 @@ export default function AdminPanel() {
             </div>
           </div>
 
-          {/* Recent Activity / Signups */}
           <div className="rounded-xl border border-bone/10 bg-coal p-6">
             <h2 className="font-display text-xl font-bold text-amber mb-4">Recent Student Signups</h2>
             {analytics.recentStudents.length === 0 ? (
@@ -324,6 +326,72 @@ export default function AdminPanel() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ==========================================
+          STUDENT PROGRESS TAB (NEW)
+      ========================================== */}
+      {activeTab === 'progress' && (
+        <div className="rounded-lg border border-bone/10 bg-coal p-6">
+          <h2 className="font-display text-xl font-bold text-amber mb-4">Student Engagement & Progress</h2>
+          {progress.length === 0 ? (
+            <p className="text-sm text-smoke text-center py-8">No students have enrolled in courses yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="text-xs text-smoke uppercase border-b border-bone/10">
+                  <tr>
+                    <th className="py-3 px-2">Student</th>
+                    <th className="py-3 px-2">Course</th>
+                    <th className="py-3 px-2">Enrolled</th>
+                    <th className="py-3 px-2">Quiz Status</th>
+                    <th className="py-3 px-2 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {progress.map((p, idx) => (
+                    <tr key={idx} className="border-b border-bone/5 hover:bg-ink/50 transition-colors">
+                      <td className="py-3 px-2">
+                        <p className="font-bold text-bone">{p.user_name}</p>
+                        <p className="text-xs text-smoke">{p.user_email}</p>
+                      </td>
+                      <td className="py-3 px-2">
+                        <p className="font-bold text-bone">{p.course_code}</p>
+                        <p className="text-xs text-smoke truncate max-w-[200px]">{p.course_title}</p>
+                      </td>
+                      <td className="py-3 px-2 text-smoke">
+                        {new Date(p.enrolled_at).toLocaleDateString()}
+                      </td>
+                      <td className="py-3 px-2">
+                        {p.quiz_passed === 1 ? (
+                          <span className="rounded bg-mint/20 px-2 py-1 text-[10px] font-bold uppercase text-mint">
+                            Passed ({p.quiz_score}/{p.quiz_total})
+                          </span>
+                        ) : p.quiz_score ? (
+                          <span className="rounded bg-amber/20 px-2 py-1 text-[10px] font-bold uppercase text-amber">
+                            In Progress ({p.quiz_score}/{p.quiz_total})
+                          </span>
+                        ) : (
+                          <span className="rounded bg-bone/5 px-2 py-1 text-[10px] font-bold uppercase text-smoke">
+                            Not Started
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-2 text-right">
+                        <button 
+                          onClick={() => go({ view: 'course', courseId: p.course_id })}
+                          className="text-xs text-tgsky hover:underline font-bold"
+                        >
+                          View Course
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -482,7 +550,7 @@ export default function AdminPanel() {
             <form onSubmit={handleAddMentor} className="space-y-3">
               <input required placeholder="Name" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
                 value={newMentor.name} onChange={e => setNewMentor({...newMentor, name: e.target.value})} />
-              <input placeholder="Image URL (e.g., https://imgur.com/...)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
+              <input placeholder="Image URL" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
                 value={newMentor.imageUrl} onChange={e => setNewMentor({...newMentor, imageUrl: e.target.value})} />
               <textarea required placeholder="Bio" rows={3} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
                 value={newMentor.bio} onChange={e => setNewMentor({...newMentor, bio: e.target.value})} />
@@ -608,7 +676,7 @@ export default function AdminPanel() {
                 value={newCourse.outcomes} onChange={e => setNewCourse({...newCourse, outcomes: e.target.value})} />
               <input placeholder="Skills (comma-separated)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
                 value={newCourse.skills} onChange={e => setNewCourse({...newCourse, skills: e.target.value})} />
-              <input placeholder="Telegram channel (e.g., t.me/lair_ds401)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
+              <input placeholder="Telegram channel" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
                 value={newCourse.channel} onChange={e => setNewCourse({...newCourse, channel: e.target.value})} />
               <button type="submit" className="w-full rounded bg-amber py-2 text-xs font-bold uppercase text-ink hover:bg-amber/90 transition-colors">Create Course</button>
             </form>

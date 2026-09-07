@@ -31,13 +31,11 @@ export const api = {
   getCourses: () => request<{ data: any[] }>('/api/courses'),
   getCourse: (id: string) => request<{ data: any }>(`/api/courses/${id}`),
 
-  // UPDATED: Now requires a password
   register: (name: string, email: string, password: string) =>
     request<{ data: any; token: string }>('/api/auth/register', {
       method: 'POST', body: JSON.stringify({ name, email, password })
     }).then(res => { setToken(res.token); return res; }),
 
-  // UPDATED: Now requires a password
   login: (email: string, password: string) =>
     request<{ data: any; token: string }>('/api/auth/login', {
       method: 'POST', body: JSON.stringify({ email, password })
@@ -174,28 +172,16 @@ export const api = {
   
   uploadResource: async (file: File | null, externalUrl: string | null, courseId: string, lessonId: string, type: string) => {
     const token = getToken();
-    
-    if (externalUrl) {
-      return { success: true, data: { url: externalUrl, type, name: 'External Link', sourceType: 'external' } };
-    }
-
+    if (externalUrl) return { success: true, data: { url: externalUrl, type, name: 'External Link', sourceType: 'external' } };
     if (!file) throw new Error('No file or URL provided');
-    
     const formData = new FormData();
     formData.append('file', file);
     formData.append('courseId', courseId);
     formData.append('lessonId', lessonId);
     formData.append('type', type);
-
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
-
-    const res = await fetch(`${API_BASE}/api/admin/resources/upload`, {
-      method: 'POST',
-      headers,
-      body: formData,
-    });
-    
+    const res = await fetch(`${API_BASE}/api/admin/resources/upload`, { method: 'POST', headers, body: formData });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Upload failed');
     return data;
@@ -243,5 +229,7 @@ export const api = {
       method: 'POST', body: JSON.stringify({ installmentId, adminToken: getToken() })
     }),
 
+  // Admin Analytics & Progress
   getAnalytics: () => request<{ data: any }>('/api/admin/analytics'),
+  getStudentProgress: () => request<{ data: any[] }>('/api/admin/student-progress'),
 };

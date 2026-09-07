@@ -6,51 +6,33 @@ async function verifyTelegramInitData(initData, botToken) {
     const urlParams = new URLSearchParams(initData);
     const hash = urlParams.get('hash');
     urlParams.delete('hash');
-    
     const sortedParams = Array.from(urlParams.entries()).sort(([a], [b]) => a.localeCompare(b));
     const dataCheckString = sortedParams.map(([key, value]) => `${key}=${value}`).join('\n');
-    
     const encoder = new TextEncoder();
-    const secretKey = await crypto.subtle.importKey(
-      'raw', encoder.encode('WebAppData'),
-      { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
-    );
+    const secretKey = await crypto.subtle.importKey('raw', encoder.encode('WebAppData'), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
     const secret = await crypto.subtle.sign('HMAC', secretKey, encoder.encode(botToken));
-    
-    const key = await crypto.subtle.importKey(
-      'raw', secret,
-      { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
-    );
+    const key = await crypto.subtle.importKey('raw', secret, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
     const computedHash = await crypto.subtle.sign('HMAC', key, encoder.encode(dataCheckString));
-    
     const hashArray = Array.from(new Uint8Array(computedHash));
     const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    
     return hashHex === hash;
-  } catch (e) {
-    return false;
-  }
+  } catch (e) { return false; }
 }
 
 // Helper function to convert raw links to secure embed links
 function getEmbedUrl(url, type) {
   if (!url) return null;
-  
   const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\s?]+)/);
   if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}?rel=0&modestbranding=1`;
-
   const vimeoMatch = url.match(/vimeo\.com\/(\d+)/);
   if (vimeoMatch) return `https://player.vimeo.com/video/${vimeoMatch[1]}`;
-
   if (url.includes('drive.google.com')) {
     const driveMatch = url.match(/\/file\/d\/([^/]+)/);
     if (driveMatch) return `https://docs.google.com/viewer?url=https://drive.google.com/uc?id=${driveMatch[1]}&embedded=true`;
   }
-
   if (type === 'document' && url.endsWith('.pdf')) {
     return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
   }
-
   return url;
 }
 
@@ -58,12 +40,8 @@ function getEmbedUrl(url, type) {
 async function logAudit(env, adminId, action, details) {
   try {
     const id = 'audit_' + Math.random().toString(36).slice(2, 10);
-    await env.DB.prepare(
-      'INSERT INTO audit_logs (id, admin_id, action, details, created_at) VALUES (?, ?, ?, ?, ?)'
-    ).bind(id, adminId, action, details, Date.now()).run();
-  } catch (e) {
-    console.error('Failed to log audit:', e);
-  }
+    await env.DB.prepare('INSERT INTO audit_logs (id, admin_id, action, details, created_at) VALUES (?, ?, ?, ?, ?)').bind(id, adminId, action, details, Date.now()).run();
+  } catch (e) { console.error('Failed to log audit:', e); }
 }
 
 // NEW: Helper to securely hash passwords using SHA-256
@@ -87,53 +65,34 @@ export default {
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     };
 
-    if (method === 'OPTIONS') {
-      return new Response(null, { headers: corsHeaders });
-    }
+    if (method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
     const uid = () => Math.random().toString(36).slice(2, 10);
     const getToken = () => request.headers.get('Authorization')?.replace('Bearer ', '');
-    
     const json = (data, status = 200) => Response.json(data, { status, headers: corsHeaders });
     const error = (msg, status) => json({ error: msg }, status);
 
     try {
       // ============================================
-      // PAYSTACK WEBHOOK (Secure Live Mode)
+      // PAYSTACK WEBHOOK
       // ============================================
       if (path === '/api/webhooks/paystack' && method === 'POST') {
         const bodyText = await request.text();
         const signature = request.headers.get('x-paystack-signature');
-        
         const encoder = new TextEncoder();
-        const key = await crypto.subtle.importKey(
-          'raw', encoder.encode(env.PAYSTACK_SECRET_KEY),
-          { name: 'HMAC', hash: 'SHA-512' }, false, ['sign']
-        );
+        const key = await crypto.subtle.importKey('raw', encoder.encode(env.PAYSTACK_SECRET_KEY), { name: 'HMAC', hash: 'SHA-512' }, false, ['sign']);
         const hashBuffer = await crypto.subtle.sign('HMAC', key, encoder.encode(bodyText));
         const hashArray = Array.from(new Uint8Array(hashBuffer));
         const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        
-        if (hashHex !== signature) {
-          return error('Invalid signature', 400);
-        }
-
+        if (hashHex !== signature) return error('Invalid signature', 400);
         const body = JSON.parse(bodyText);
-
         if (body.event === 'charge.success') {
           const data = body.data;
           const reference = data.reference;
-          
           const payment = await env.DB.prepare('SELECT * FROM payments WHERE reference = ?').bind(reference).first();
-          
           if (payment && payment.status === 'pending') {
-            await env.DB.prepare('UPDATE payments SET status = ?, paystack_ref = ?, updated_at = ? WHERE id = ?')
-              .bind('paid', data.reference, Date.now(), payment.id).run();
-            
-            if (payment.course_id) {
-              await env.DB.prepare('INSERT OR IGNORE INTO enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, ?)')
-                .bind(payment.user_id, payment.course_id, Date.now()).run();
-            }
+            await env.DB.prepare('UPDATE payments SET status = ?, paystack_ref = ?, updated_at = ? WHERE id = ?').bind('paid', data.reference, Date.now(), payment.id).run();
+            if (payment.course_id) await env.DB.prepare('INSERT OR IGNORE INTO enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, ?)').bind(payment.user_id, payment.course_id, Date.now()).run();
           }
         }
         return json({ status: 'success' });
@@ -145,24 +104,18 @@ export default {
       if (path === '/api/payments/initiate' && method === 'POST') {
         const token = getToken();
         if (!token) return error('Unauthorized', 401);
-        
         const { courseId, mentorshipAppId, amount, method, currency, paymentPlan, months } = await request.json();
         const reference = 'TL-' + Date.now() + '-' + uid();
         const now = Date.now();
-        
-        await env.DB.prepare('INSERT INTO payments (id, user_id, course_id, mentorship_app_id, amount, method, currency, payment_plan, reference, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-          .bind(reference, token, courseId || null, mentorshipAppId || null, amount, method, currency || 'NGN', paymentPlan || 'full', reference, now, now).run();
-        
+        await env.DB.prepare('INSERT INTO payments (id, user_id, course_id, mentorship_app_id, amount, method, currency, payment_plan, reference, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(reference, token, courseId || null, mentorshipAppId || null, amount, method, currency || 'NGN', paymentPlan || 'full', reference, now, now).run();
         if (paymentPlan === 'installment' && months > 1) {
           const monthlyAmount = Math.ceil(amount / months);
           for (let i = 1; i <= months; i++) {
             const instId = 'inst_' + uid();
             const dueDate = now + (i * 30 * 24 * 60 * 60 * 1000);
-            await env.DB.prepare('INSERT INTO installments (id, payment_id, user_id, course_id, amount, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-              .bind(instId, reference, token, courseId || null, monthlyAmount, dueDate, now).run();
+            await env.DB.prepare('INSERT INTO installments (id, payment_id, user_id, course_id, amount, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(instId, reference, token, courseId || null, monthlyAmount, dueDate, now).run();
           }
         }
-        
         return json({ data: { reference, amount, currency: currency || 'NGN', paymentPlan, months } });
       }
 
@@ -170,8 +123,7 @@ export default {
         const token = getToken();
         if (!token) return error('Unauthorized', 401);
         const { reference, proofUrl } = await request.json();
-        await env.DB.prepare('UPDATE payments SET status = ?, proof_url = ?, updated_at = ? WHERE reference = ? AND user_id = ?')
-          .bind('proof_submitted', proofUrl, Date.now(), reference, token).run();
+        await env.DB.prepare('UPDATE payments SET status = ?, proof_url = ?, updated_at = ? WHERE reference = ? AND user_id = ?').bind('proof_submitted', proofUrl, Date.now(), reference, token).run();
         return json({ success: true });
       }
 
@@ -179,15 +131,10 @@ export default {
         const { reference, adminToken } = await request.json();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(adminToken).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-
         const payment = await env.DB.prepare('SELECT * FROM payments WHERE reference = ?').bind(reference).first();
         if (!payment) return error('Payment not found', 404);
-
         await env.DB.prepare('UPDATE payments SET status = ?, updated_at = ? WHERE id = ?').bind('paid', Date.now(), payment.id).run();
-        if (payment.course_id) {
-          await env.DB.prepare('INSERT OR IGNORE INTO enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, ?)').bind(payment.user_id, payment.course_id, Date.now()).run();
-        }
-        
+        if (payment.course_id) await env.DB.prepare('INSERT OR IGNORE INTO enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, ?)').bind(payment.user_id, payment.course_id, Date.now()).run();
         await logAudit(env, adminToken, 'PAYMENT_APPROVED', `Approved payment reference: ${reference}`);
         return json({ success: true });
       }
@@ -198,9 +145,7 @@ export default {
       if (path === '/api/installments/my' && method === 'GET') {
         const token = getToken();
         if (!token) return error('Unauthorized', 401);
-        const installments = await env.DB.prepare(`
-          SELECT i.*, c.title as course_title FROM installments i LEFT JOIN courses c ON i.course_id = c.id WHERE i.user_id = ? AND i.status != 'paid' ORDER BY i.due_date ASC
-        `).bind(token).all();
+        const installments = await env.DB.prepare(`SELECT i.*, c.title as course_title FROM installments i LEFT JOIN courses c ON i.course_id = c.id WHERE i.user_id = ? AND i.status != 'paid' ORDER BY i.due_date ASC`).bind(token).all();
         return json({ data: installments.results });
       }
 
@@ -216,19 +161,14 @@ export default {
         const { installmentId, adminToken } = await request.json();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(adminToken).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-
         const inst = await env.DB.prepare('SELECT * FROM installments WHERE id = ?').bind(installmentId).first();
         if (!inst) return error('Installment not found', 404);
-
         await env.DB.prepare('UPDATE installments SET status = ? WHERE id = ?').bind('paid', installmentId).run();
         const pendingCount = await env.DB.prepare('SELECT COUNT(*) as count FROM installments WHERE payment_id = ? AND status != ?', inst.payment_id, 'paid').first();
         if (pendingCount.count === 0) {
           await env.DB.prepare('UPDATE payments SET status = ? WHERE id = ?').bind('paid', inst.payment_id).run();
-          if (inst.course_id) {
-             await env.DB.prepare('INSERT OR IGNORE INTO enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, ?)').bind(inst.user_id, inst.course_id, Date.now()).run();
-          }
+          if (inst.course_id) await env.DB.prepare('INSERT OR IGNORE INTO enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, ?)').bind(inst.user_id, inst.course_id, Date.now()).run();
         }
-        
         await logAudit(env, adminToken, 'INSTALLMENT_APPROVED', `Approved installment ID: ${installmentId}`);
         return json({ success: true });
       }
@@ -237,9 +177,7 @@ export default {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        const installments = await env.DB.prepare(`
-          SELECT i.*, u.name as user_name, u.email as user_email, c.title as course_title FROM installments i JOIN users u ON i.user_id = u.id LEFT JOIN courses c ON i.course_id = c.id WHERE i.status = 'proof_submitted' ORDER BY i.created_at DESC
-        `).all();
+        const installments = await env.DB.prepare(`SELECT i.*, u.name as user_name, u.email as user_email, c.title as course_title FROM installments i JOIN users u ON i.user_id = u.id LEFT JOIN courses c ON i.course_id = c.id WHERE i.status = 'proof_submitted' ORDER BY i.created_at DESC`).all();
         return json({ data: installments.results });
       }
 
@@ -247,14 +185,12 @@ export default {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        const payments = await env.DB.prepare(`
-          SELECT p.*, u.name as user_name, u.email as user_email, c.title as course_title FROM payments p JOIN users u ON p.user_id = u.id LEFT JOIN courses c ON p.course_id = c.id ORDER BY p.created_at DESC
-        `).all();
+        const payments = await env.DB.prepare(`SELECT p.*, u.name as user_name, u.email as user_email, c.title as course_title FROM payments p JOIN users u ON p.user_id = u.id LEFT JOIN courses c ON p.course_id = c.id ORDER BY p.created_at DESC`).all();
         return json({ data: payments.results });
       }
 
       // ============================================
-      // COURSES API
+      // COURSES API (With Safe JSON Parsing)
       // ============================================
       if (path === '/api/courses' && method === 'GET') {
         const courses = await env.DB.prepare('SELECT * FROM courses ORDER BY created_at DESC').all();
@@ -270,49 +206,46 @@ export default {
         const lessons = await env.DB.prepare('SELECT * FROM lessons WHERE course_id = ? ORDER BY order_index').bind(courseId).all();
         const quiz = await env.DB.prepare('SELECT * FROM quiz_questions WHERE course_id = ? ORDER BY order_index').bind(courseId).all();
 
-        course.outcomes = JSON.parse(course.outcomes);
-        course.skills = JSON.parse(course.skills);
+        // SAFE JSON PARSING (Prevents blank screens)
+        try { course.outcomes = JSON.parse(course.outcomes); } catch { course.outcomes = []; }
+        try { course.skills = JSON.parse(course.skills); } catch { course.skills = []; }
+        
         modules.results.forEach(m => {
-          m.lessons = lessons.results.filter(l => l.module_id === m.id).map(l => ({
-            ...l, tags: JSON.parse(l.tags), bullets: JSON.parse(l.bullets)
-          }));
+          m.lessons = lessons.results.filter(l => l.module_id === m.id).map(l => {
+            let safeTags = []; try { safeTags = JSON.parse(l.tags); } catch {}
+            let safeBullets = []; try { safeBullets = JSON.parse(l.bullets); } catch {}
+            return { ...l, tags: safeTags, bullets: safeBullets };
+          });
         });
-        quiz.results.forEach(q => q.options = JSON.parse(q.options));
+        
+        quiz.results.forEach(q => {
+          try { q.options = JSON.parse(q.options); } catch { q.options = []; }
+        });
 
         return json({ data: { ...course, modules: modules.results, quiz: quiz.results } });
       }
 
       // ============================================
-      // AUTH API (UPDATED WITH PASSWORD HASHING)
+      // AUTH API (With Password Hashing)
       // ============================================
       if (path === '/api/auth/register' && method === 'POST') {
         const { name, email, password } = await request.json();
         if (!password || password.length < 6) return error('Password must be at least 6 characters', 400);
-        
         const id = 'st_' + uid();
         const passwordHash = await hashPassword(password);
-        
         try {
-          await env.DB.prepare('INSERT INTO users (id, name, email, password_hash, joined_at) VALUES (?, ?, ?, ?, ?)')
-            .bind(id, name, email, passwordHash, Date.now()).run();
+          await env.DB.prepare('INSERT INTO users (id, name, email, password_hash, joined_at) VALUES (?, ?, ?, ?, ?)').bind(id, name, email, passwordHash, Date.now()).run();
           const user = await env.DB.prepare('SELECT id, name, email, role, joined_at FROM users WHERE id = ?').bind(id).first();
           return json({ data: user, token: id });
-        } catch (e) {
-          return error('Email already registered', 400);
-        }
+        } catch (e) { return error('Email already registered', 400); }
       }
 
       if (path === '/api/auth/login' && method === 'POST') {
         const { email, password } = await request.json();
         const user = await env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(email).first();
-        
         if (!user) return error('Invalid email or password', 401);
-        
         const inputHash = await hashPassword(password);
-        if (inputHash !== user.password_hash) {
-          return error('Invalid email or password', 401);
-        }
-        
+        if (inputHash !== user.password_hash) return error('Invalid email or password', 401);
         const { password_hash, ...safeUser } = user;
         return json({ data: safeUser, token: user.id });
       }
@@ -347,9 +280,7 @@ export default {
         try {
           await env.DB.prepare('INSERT INTO enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, ?)').bind(token, courseId, Date.now()).run();
           return json({ success: true });
-        } catch (e) {
-          return error('Already enrolled', 400);
-        }
+        } catch (e) { return error('Already enrolled', 400); }
       }
 
       if (path === '/api/enrollments' && method === 'GET') {
@@ -366,9 +297,7 @@ export default {
         try {
           await env.DB.prepare('INSERT INTO lesson_completions (user_id, lesson_id, completed_at) VALUES (?, ?, ?)').bind(token, lessonId, Date.now()).run();
           return json({ success: true });
-        } catch (e) {
-          return error('Already completed', 400);
-        }
+        } catch (e) { return error('Already completed', 400); }
       }
 
       if (path === '/api/quiz/submit' && method === 'POST') {
@@ -395,18 +324,14 @@ export default {
         if (!token) return error('Unauthorized', 401);
         const user = await env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(token).first();
         if (!user) return error('User not found', 404);
-
         const { initData } = await request.json();
         if (!initData) return error('Missing initData', 400);
-
         const isValid = await verifyTelegramInitData(initData, env.BOT_TOKEN);
         if (!isValid) return error('Invalid Telegram data', 403);
-
         const urlParams = new URLSearchParams(initData);
         const userData = JSON.parse(urlParams.get('user') || '{}');
         const telegramId = String(userData.id);
         if (!telegramId) return error('No Telegram ID found', 400);
-
         await env.DB.prepare('UPDATE users SET telegram_id = ? WHERE id = ?').bind(telegramId, user.id).run();
         return json({ success: true, telegramId });
       }
@@ -447,7 +372,6 @@ export default {
         const id = 'app_' + uid();
         const paidEnrollments = await env.DB.prepare('SELECT COUNT(*) as count FROM enrollments WHERE user_id = ?').bind(token).first();
         const paymentStatus = paidEnrollments.count > 0 ? 'waived' : 'not_applicable';
-        
         await env.DB.prepare('INSERT INTO mentorship_applications (id, user_id, category_id, custom_category, goals, experience, availability, preferred_format, payment_status, applied_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(id, token, categoryId, customCategory, goals, experience, availability, preferredFormat, paymentStatus, Date.now()).run();
         return json({ data: { id, status: 'pending', paymentStatus } });
       }
@@ -526,13 +450,12 @@ export default {
       }
 
       // ============================================
-      // ADMIN ANALYTICS DASHBOARD
+      // ADMIN ANALYTICS & PROGRESS (NEW)
       // ============================================
       if (path === '/api/admin/analytics' && method === 'GET') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-
         const [revenueData, studentsData, coursesData, appsData, recentUsers] = await Promise.all([
           env.DB.prepare("SELECT SUM(amount) as total FROM payments WHERE status = 'paid'").first(),
           env.DB.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'student'").first(),
@@ -540,16 +463,15 @@ export default {
           env.DB.prepare("SELECT COUNT(*) as count FROM mentorship_applications WHERE status = 'pending'").first(),
           env.DB.prepare("SELECT id, name, email, joined_at FROM users WHERE role = 'student' ORDER BY joined_at DESC LIMIT 5").all()
         ]);
+        return json({ data: { totalRevenue: revenueData.total || 0, totalStudents: studentsData.count || 0, totalCourses: coursesData.count || 0, pendingApplications: appsData.count || 0, recentStudents: recentUsers.results || [] } });
+      }
 
-        return json({
-          data: {
-            totalRevenue: revenueData.total || 0,
-            totalStudents: studentsData.count || 0,
-            totalCourses: coursesData.count || 0,
-            pendingApplications: appsData.count || 0,
-            recentStudents: recentUsers.results || []
-          }
-        });
+      if (path === '/api/admin/student-progress' && method === 'GET') {
+        const token = getToken();
+        const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
+        if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
+        const progress = await env.DB.prepare(`SELECT u.id as user_id, u.name as user_name, u.email as user_email, c.id as course_id, c.title as course_title, c.code as course_code, e.enrolled_at, e.quiz_passed, e.quiz_score, e.quiz_total FROM enrollments e JOIN users u ON e.user_id = u.id JOIN courses c ON e.course_id = c.id ORDER BY e.enrolled_at DESC`).all();
+        return json({ data: progress.results });
       }
 
       // ============================================
@@ -573,9 +495,7 @@ export default {
         const { userId, name, bio, courseIds } = await request.json();
         const id = 'inst_' + uid();
         await env.DB.prepare('INSERT INTO instructors (id, user_id, name, bio, created_at) VALUES (?, ?, ?, ?, ?)').bind(id, userId, name, bio, Date.now()).run();
-        for (const courseId of courseIds) {
-          await env.DB.prepare('INSERT INTO course_instructors (course_id, instructor_id) VALUES (?, ?)').bind(courseId, id).run();
-        }
+        for (const courseId of courseIds) await env.DB.prepare('INSERT INTO course_instructors (course_id, instructor_id) VALUES (?, ?)').bind(courseId, id).run();
         await logAudit(env, token, 'INSTRUCTOR_CREATED', `Created instructor: ${name}`);
         return json({ data: { id } });
       }
@@ -747,81 +667,52 @@ export default {
       }
 
       // ============================================
-      // R2 RESOURCE UPLOAD (HYBRID: R2 + External URLs)
+      // R2 RESOURCE UPLOAD
       // ============================================
       if (path === '/api/admin/resources/upload' && method === 'POST') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-
-        if (!env.R2_BUCKET) {
-          return error('R2 bucket not configured yet. Please add it to wrangler.toml', 500);
-        }
-
+        if (!env.R2_BUCKET) return error('R2 bucket not configured yet. Please add it to wrangler.toml', 500);
         const formData = await request.formData();
         const file = formData.get('file');
         const courseId = formData.get('courseId');
         const lessonId = formData.get('lessonId');
         const type = formData.get('type') || 'document';
-
-        if (!file || !(file instanceof File)) {
-          return error('No valid file provided', 400);
-        }
-
+        if (!file || !(file instanceof File)) return error('No valid file provided', 400);
         const ext = file.name.split('.').pop();
         const safeName = file.name.replace(/[^a-zA-Z0-9.]/g, '_');
         const key = `courses/${courseId}/lessons/${lessonId}/${Date.now()}_${safeName}`;
-
         await env.R2_BUCKET.put(key, file, { httpMetadata: { contentType: file.type } });
-
         const publicUrl = `https://pub-xxxxxxxxxxxxxxxx.r2.dev/${key}`; 
-
-        return json({ 
-          success: true, 
-          data: { url: publicUrl, key, type, size: file.size, name: file.name, sourceType: 'r2' } 
-        });
+        return json({ success: true, data: { url: publicUrl, key, type, size: file.size, name: file.name, sourceType: 'r2' } });
       }
 
       // ============================================
-      // SECURE RESOURCE STREAMING (Hides Raw Links)
+      // SECURE RESOURCE STREAMING
       // ============================================
       if (path.startsWith('/api/resources/stream/') && method === 'GET') {
         const resourceId = path.split('/').pop();
         const token = getToken();
-        
         const resource = await env.DB.prepare('SELECT * FROM resources WHERE id = ?').bind(resourceId).first();
         if (!resource) return error('Resource not found', 404);
-
         if (resource.access_level === 'enrolled') {
           if (!token) return error('Unauthorized', 401);
           const enrollment = await env.DB.prepare('SELECT 1 FROM enrollments WHERE user_id = ? AND course_id = ?').bind(token, resource.course_id).first();
           if (!enrollment) return error('Forbidden: Please enroll in this course to access this resource', 403);
         }
-
         if (resource.source_type === 'r2' || !resource.source_type) {
           if (!env.R2_BUCKET) return error('R2 not configured', 500);
-          
           const object = await env.R2_BUCKET.get(resource.key);
           if (!object) return error('File missing from storage', 404);
-
           const headers = new Headers();
           object.writeHttpMetadata(headers);
           headers.set('etag', object.httpEtag);
           headers.set('Content-Disposition', 'inline'); 
-
           return new Response(object.body, { headers });
-        } 
-        
-        else if (resource.source_type === 'external') {
-          return json({ 
-            data: { 
-              type: resource.type, 
-              originalUrl: resource.source_url,
-              embedUrl: getEmbedUrl(resource.source_url, resource.type)
-            } 
-          });
+        } else if (resource.source_type === 'external') {
+          return json({ data: { type: resource.type, originalUrl: resource.source_url, embedUrl: getEmbedUrl(resource.source_url, resource.type) } });
         }
-
         return error('Unknown resource type', 400);
       }
 
@@ -874,25 +765,16 @@ export default {
   },
 
   // ============================================
-  // SCHEDULED CRON JOB (Daily Installment Reminders)
+  // SCHEDULED CRON JOB
   // ============================================
   async scheduled(event, env) {
     const now = Date.now();
-    const pending = await env.DB.prepare(`
-      SELECT i.*, u.name, u.telegram_id, c.title as course_title
-      FROM installments i JOIN users u ON i.user_id = u.id LEFT JOIN courses c ON i.course_id = c.id
-      WHERE i.due_date <= ? AND i.status = 'pending' AND i.reminder_sent = 0
-    `).bind(now).all();
-    
+    const pending = await env.DB.prepare(`SELECT i.*, u.name, u.telegram_id, c.title as course_title FROM installments i JOIN users u ON i.user_id = u.id LEFT JOIN courses c ON i.course_id = c.id WHERE i.due_date <= ? AND i.status = 'pending' AND i.reminder_sent = 0`).bind(now).all();
     for (const inst of pending.results) {
       if (inst.telegram_id) {
         const amount = inst.amount.toLocaleString();
         const message = `🐯 Hello ${inst.name},\n\nYour installment of ₦${amount} for *${inst.course_title || 'your course'}* is now due.\n\nPlease complete the payment to continue your learning journey without interruption.\n\nOpen the app to pay or upload your proof.`;
-        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chat_id: inst.telegram_id, text: message, parse_mode: 'Markdown' })
-        });
+        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: inst.telegram_id, text: message, parse_mode: 'Markdown' }) });
       }
       await env.DB.prepare('UPDATE installments SET reminder_sent = 1 WHERE id = ?').bind(inst.id).run();
     }
