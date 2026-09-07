@@ -70,6 +70,7 @@ export default function CourseEditor() {
       };
       await api.updateCourse(courseId!, payload);
       toast("Course details updated successfully!");
+      loadCourse(); // Refresh to show updated data
     } catch (e: any) { 
       toast(e.message || "Failed to save details"); 
     } finally { 
@@ -311,13 +312,19 @@ function UnitResourceAdder({ courseId, unitId, onAdded }: any) {
       let sourceType = 'external';
       let finalType = type;
 
+      // Handle R2 Bucket Uploads
       if (type === 'video_r2' || type === 'document_pdf') {
         if (!file) { toast("Please select a file to upload"); setLoading(false); return; }
         const uploadType = type === 'video_r2' ? 'video' : 'document';
         const res = await api.uploadResource(file, null, courseId, unitId, uploadType);
         sourceUrl = res.data.url;
         sourceType = 'r2';
-        finalType = uploadType === 'video' ? 'video_r2' : 'document_pdf';
+      } 
+      // Handle External Links (YouTube, Direct Video Links, Blogs)
+      else {
+        if (!url.trim()) { toast("Please enter a valid URL"); setLoading(false); return; }
+        sourceUrl = url;
+        sourceType = 'external';
       }
 
       await api.createResource({ 
@@ -349,8 +356,9 @@ function UnitResourceAdder({ courseId, unitId, onAdded }: any) {
         onChange={e => setType(e.target.value)}
       >
         <option value="video_youtube">YouTube Video (Link)</option>
-        <option value="video_r2">Upload Video File (MP4)</option>
-        <option value="document_pdf">Upload PDF / Document</option>
+        <option value="video_external">External Video Link (MP4/Vimeo)</option>
+        <option value="video_r2">Upload Video File to R2 (MP4)</option>
+        <option value="document_pdf">Upload PDF / Document to R2</option>
         <option value="link_external">External Link / Blog Post</option>
         <option value="assignment">Text Assignment / Instructions</option>
       </select>
@@ -362,7 +370,8 @@ function UnitResourceAdder({ courseId, unitId, onAdded }: any) {
         onChange={e => setTitle(e.target.value)} 
       />
       
-      {(type === 'video_youtube' || type === 'link_external') && (
+      {/* Show URL input for external links */}
+      {(type === 'video_youtube' || type === 'video_external' || type === 'link_external') && (
         <input 
           placeholder="Paste URL here..." 
           className="w-full rounded border border-bone/10 bg-coal p-2 text-sm text-bone" 
@@ -371,6 +380,7 @@ function UnitResourceAdder({ courseId, unitId, onAdded }: any) {
         />
       )}
       
+      {/* Show File input for R2 uploads */}
       {(type === 'video_r2' || type === 'document_pdf') && (
         <input 
           type="file" 

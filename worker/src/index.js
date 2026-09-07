@@ -604,6 +604,7 @@ export default {
         
         // Delete resources tied to this lesson first
         await env.DB.prepare('DELETE FROM resources WHERE lesson_id = ?').bind(lessonId).run();
+        await env.DB.prepare('DELETE FROM lesson_completions WHERE lesson_id = ?').bind(lessonId).run();
         await env.DB.prepare('DELETE FROM lessons WHERE id = ?').bind(lessonId).run();
         
         await logAudit(env, token, 'LESSON_DELETED', `Deleted lesson ID: ${lessonId}`);
@@ -745,20 +746,22 @@ export default {
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
         const courseId = path.split('/')[3];
         
-        // 1. Delete all resources tied to lessons in this course
-        const lessons = await env.DB.prepare('SELECT id FROM lessons WHERE course_id = ?').bind(courseId).all();
-        for (const l of lessons.results) {
+        // 1. Wipe lesson_completions + resources tied to this course's lessons (the missing FK fix)
+        const lessonRows = await env.DB.prepare('SELECT id FROM lessons WHERE course_id = ?').bind(courseId).all();
+        for (const l of lessonRows.results) {
+          await env.DB.prepare('DELETE FROM lesson_completions WHERE lesson_id = ?').bind(l.id).run();
           await env.DB.prepare('DELETE FROM resources WHERE lesson_id = ?').bind(l.id).run();
         }
         
-        // 2. Delete all dependent records
+        // 2. Delete child records (children before parents)
         await env.DB.prepare('DELETE FROM lessons WHERE course_id = ?').bind(courseId).run();
         await env.DB.prepare('DELETE FROM modules WHERE course_id = ?').bind(courseId).run();
         await env.DB.prepare('DELETE FROM quiz_questions WHERE course_id = ?').bind(courseId).run();
         await env.DB.prepare('DELETE FROM enrollments WHERE course_id = ?').bind(courseId).run();
-        await env.DB.prepare('DELETE FROM payments WHERE course_id = ?').bind(courseId).run();
         await env.DB.prepare('DELETE FROM installments WHERE course_id = ?').bind(courseId).run();
+        await env.DB.prepare('DELETE FROM payments WHERE course_id = ?').bind(courseId).run();
         await env.DB.prepare('DELETE FROM course_instructors WHERE course_id = ?').bind(courseId).run();
+        await env.DB.prepare('DELETE FROM resources WHERE course_id = ?').bind(courseId).run();
         
         // 3. Finally delete the course
         await env.DB.prepare('DELETE FROM courses WHERE id = ?').bind(courseId).run();
@@ -784,15 +787,31 @@ export default {
         const userId = path.split('/')[3];
         if (userId === token) return error('Cannot delete yourself', 400);
         
-        // Delete all dependent records first to avoid foreign key constraint errors
-        await env.DB.prepare('DELETE FROM enrollments WHERE user_id = ?').bind(userId).run();
-        await env.DB.prepare('DELETE FROM payments WHERE user_id = ?').bind(userId).run();
-        await env.DB.prepare('DELETE FROM installments WHERE user_id = ?').bind(userId).run();
-        await env.DB.prepare('DELETE FROM mentorship_applications WHERE user_id = ?').bind(userId).run();
-        await env.DB.prepare('DELETE FROM counseling_sessions WHERE user_id = ?').bind(userId).run();
-        await env.DB.prepare('DELETE FROM meetup_attendees WHERE user_id = ?').bind(userId).run();
+        // Mentor-owned rows (if this user was a mentor)
+        const mentorRows = await env.DB.prepare('SELECT id FROM mentors WHERE user_id = ?').bind(userId).all();
+        for (const m of mentorRows.results) {
+          await env.DB.prepare('DELETE FROM meetup_attendees WHERE meetup_id IN (SELECT id FROM meetups WHERE mentor_id = ?)').bind(m.id).run();
+          await env.DB.prepare('DELETE FROM meetups WHERE mentor_id = ?').bind(m.id).run();
+          await env.DB.prepare('DELETE FROM counseling_sessions WHERE mentor_id = ?').bind(m.id).run();
+          await env.DB.prepare('UPDATE mentorship_applications SET mentor_id = NULL WHERE mentor_id = ?').bind(m.id).run();
+        }
+        await env.DB.prepare('DELETE FROM mentors WHERE user_id = ?').bind(userId).run();
+
+        // Instructor-owned rows
+        await env.DB.prepare('DELETE FROM course_instructors WHERE instructor_id IN (SELECT id FROM instructors WHERE user_id = ?)').bind(userId).run();
+        await env.DB.prepare('DELETE FROM instructors WHERE user_id = ?').bind(userId).run();
+
+        // Student-owned rows
         await env.DB.prepare('DELETE FROM lesson_completions WHERE user_id = ?').bind(userId).run();
-        
+        await env.DB.prepare('DELETE FROM activity_logs WHERE user_id = ?').bind(userId).run();
+        await env.DB.prepare('DELETE FROM meetup_attendees WHERE user_id = ?').bind(userId).run();
+        await env.DB.prepare('DELETE FROM counseling_sessions WHERE user_id = ?').bind(userId).run();
+        await env.DB.prepare('DELETE FROM enrollments WHERE user_id = ?').bind(userId).run();
+        await env.DB.prepare('DELETE FROM installments WHERE user_id = ?').bind(userId).run();
+        await env.DB.prepare('DELETE FROM payments WHERE user_id = ?').bind(userId).run();
+        await env.DB.prepare('DELETE FROM mentorship_applications WHERE user_id = ?').bind(userId).run();
+        await env.DB.prepare('DELETE FROM audit_logs WHERE admin_id = ?').bind(userId).run();
+
         // Finally delete the user
         await env.DB.prepare('DELETE FROM users WHERE id = ?').bind(userId).run();
         await logAudit(env, token, 'USER_DELETED', `Deleted user ID: ${userId}`);
