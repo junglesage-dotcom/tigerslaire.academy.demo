@@ -9,21 +9,23 @@ export default function CourseEditor() {
   
   const [course, setCourse] = useState<any>(null);
   const [modules, setModules] = useState<any[]>([]);
-  const [lessons, setLessons] = useState<any[]>([]);
+  const [units, setUnits] = useState<any[]>([]); // Renamed from lessons
   const [resources, setResources] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedModule, setExpandedModule] = useState<string | null>(null);
-  const [expandedLesson, setExpandedLesson] = useState<string | null>(null);
+  const [expandedUnit, setExpandedUnit] = useState<string | null>(null);
+  
+  const [isSavingDetails, setIsSavingDetails] = useState(false);
 
   useEffect(() => {
-    if (!user || user.role !== "admin") {
-      toast("Admin access required");
-      go({ view: "home" });
-      return;
+    if (!user || user.role !== "admin") { 
+      toast("Admin access required"); 
+      go({ view: "home" }); 
+      return; 
     }
-    if (!courseId) {
-      go({ view: "admin" });
-      return;
+    if (!courseId) { 
+      go({ view: "admin" }); 
+      return; 
     }
     loadCourse();
   }, [courseId, user, go, toast]);
@@ -36,86 +38,86 @@ export default function CourseEditor() {
       setCourse(res.data);
       setModules(res.data.modules || []);
       
-      const allLessons = (res.data.modules || []).flatMap((m: any) => m.lessons || []);
-      setLessons(allLessons);
+      const allUnits = (res.data.modules || []).flatMap((m: any) => m.lessons || []);
+      setUnits(allUnits);
       
-      // Load resources for all lessons
       const allResources: any[] = [];
-      for (const lesson of allLessons) {
+      for (const unit of allUnits) {
         try {
-          const resRes = await api.getResources(courseId, lesson.id);
-          allResources.push(...resRes.data.map((r: any) => ({ ...r, lessonId: lesson.id })));
+          const resRes = await api.getResources(courseId, unit.id);
+          allResources.push(...resRes.data.map((r: any) => ({ ...r, unitId: unit.id })));
         } catch (e) { /* ignore */ }
       }
       setResources(allResources);
-    } catch (e: any) {
-      toast(e.message || "Failed to load course");
-    } finally {
-      setLoading(false);
+    } catch (e: any) { 
+      toast(e.message || "Failed to load course"); 
+    } finally { 
+      setLoading(false); 
+    }
+  };
+
+  const handleSaveCourseDetails = async () => {
+    if (!course) return;
+    setIsSavingDetails(true);
+    try {
+      const payload = {
+        ...course,
+        price: Number(course.price) || 0,
+        price_usd: Number(course.price_usd) || 0,
+        weeks: Number(course.weeks) || 0,
+        outcomes: typeof course.outcomes === 'string' ? course.outcomes.split('\n').filter((o: string) => o.trim()) : course.outcomes,
+        skills: typeof course.skills === 'string' ? course.skills.split(',').map((s: string) => s.trim()) : course.skills
+      };
+      await api.updateCourse(courseId!, payload);
+      toast("Course details updated successfully!");
+    } catch (e: any) { 
+      toast(e.message || "Failed to save details"); 
+    } finally { 
+      setIsSavingDetails(false); 
     }
   };
 
   const handleAddModule = async () => {
     const title = prompt("Enter module title:");
     if (title && courseId) {
-      try {
-        await api.addModule(courseId, { title, orderIndex: modules.length });
-        toast("Module added");
-        loadCourse();
-      } catch (e: any) {
-        toast(e.message || "Failed to add module");
+      try { 
+        await api.addModule(courseId, { title, orderIndex: modules.length }); 
+        toast("Module added"); 
+        loadCourse(); 
+      } catch (e: any) { 
+        toast(e.message || "Failed to add module"); 
       }
     }
   };
 
-  const handleAddLesson = async (moduleId: string) => {
-    const title = prompt("Enter lesson title:");
+  const handleAddUnit = async (moduleId: string) => {
+    const title = prompt("Enter unit title:");
     if (title && courseId) {
       try {
-        await api.addLesson(courseId, {
-          moduleId,
-          title,
-          minutes: 0,
-          tags: [],
-          bullets: [],
-          orderIndex: lessons.filter(l => l.module_id === moduleId).length
+        await api.addLesson(courseId, { 
+          moduleId, 
+          title, 
+          minutes: 0, 
+          tags: [], 
+          bullets: [], 
+          orderIndex: units.filter(u => u.module_id === moduleId).length 
         });
-        toast("Lesson added");
+        toast("Unit added"); 
         loadCourse();
-      } catch (e: any) {
-        toast(e.message || "Failed to add lesson");
+      } catch (e: any) { 
+        toast(e.message || "Failed to add unit"); 
       }
-    }
-  };
-
-  const handleAddResource = async (lessonId: string, resourceData: any) => {
-    if (!courseId) return;
-    try {
-      await api.createResource({
-        lessonId,
-        courseId,
-        type: resourceData.type,
-        title: resourceData.name || "Resource",
-        sourceUrl: resourceData.url,
-        sourceType: resourceData.sourceType || "external",
-        key: resourceData.key,
-        accessLevel: "enrolled"
-      });
-      toast("Resource added");
-      loadCourse();
-    } catch (e: any) {
-      toast(e.message || "Failed to add resource");
     }
   };
 
   const handleDeleteResource = async (resourceId: string) => {
     if (confirm("Delete this resource?")) {
-      try {
-        await api.deleteResource(resourceId);
-        toast("Resource deleted");
-        loadCourse();
-      } catch (e: any) {
-        toast(e.message || "Failed to delete");
+      try { 
+        await api.deleteResource(resourceId); 
+        toast("Resource deleted"); 
+        loadCourse(); 
+      } catch (e: any) { 
+        toast(e.message || "Failed to delete"); 
       }
     }
   };
@@ -133,7 +135,7 @@ export default function CourseEditor() {
 
   if (!course) {
     return (
-      <div className="mx-auto max-w-5xl px-5 py-16 text-center sm:px-8">
+      <div className="mx-auto max-w-5xl px-5 py-16 text-center">
         <div className="rounded-lg border border-alert/30 bg-alert/5 p-8">
           <p className="font-display text-2xl font-bold text-alert mb-2">Course Not Found</p>
           <p className="text-smoke mb-4">The course you're looking for doesn't exist or has been removed.</p>
@@ -165,11 +167,51 @@ export default function CourseEditor() {
         </button>
       </div>
 
+      {/* COURSE SETTINGS & PRICING EDITOR */}
+      <div className="rounded-xl border border-bone/10 bg-coal p-6 mb-8">
+        <h2 className="font-display text-xl font-bold text-amber mb-4">Course Settings & Pricing</h2>
+        <div className="grid gap-4 md:grid-cols-2 mb-4">
+          <input placeholder="Course Code" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone" value={course.code || ''} onChange={e => setCourse({...course, code: e.target.value})} />
+          <input placeholder="Title" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone" value={course.title || ''} onChange={e => setCourse({...course, title: e.target.value})} />
+          <input placeholder="Tagline" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone md:col-span-2" value={course.tagline || ''} onChange={e => setCourse({...course, tagline: e.target.value})} />
+          <select className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone" value={course.level || 'Beginner'} onChange={e => setCourse({...course, level: e.target.value})}>
+            <option>Beginner</option>
+            <option>Intermediate</option>
+            <option>Advanced</option>
+          </select>
+          <input type="number" placeholder="Weeks" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone" value={course.weeks || 0} onChange={e => setCourse({...course, weeks: parseInt(e.target.value) || 0})} />
+          
+          <div className="grid grid-cols-2 gap-3 p-3 rounded-lg border border-amber/30 bg-amber/5 md:col-span-2">
+            <div>
+              <label className="text-[10px] font-bold uppercase text-amber block mb-1">Price (₦ NGN)</label>
+              <input type="number" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone" value={course.price || 0} onChange={e => setCourse({...course, price: parseInt(e.target.value) || 0})} />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold uppercase text-amber block mb-1">Price ($ USD)</label>
+              <input type="number" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone" value={course.price_usd || 0} onChange={e => setCourse({...course, price_usd: parseInt(e.target.value) || 0})} />
+            </div>
+          </div>
+        </div>
+        
+        <textarea placeholder="Summary" rows={3} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone mb-4" value={course.summary || ''} onChange={e => setCourse({...course, summary: e.target.value})} />
+        <textarea placeholder="Outcomes (one per line)" rows={3} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone mb-4" value={Array.isArray(course.outcomes) ? course.outcomes.join('\n') : (course.outcomes || '')} onChange={e => setCourse({...course, outcomes: e.target.value})} />
+        <input placeholder="Skills (comma separated)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone mb-4" value={Array.isArray(course.skills) ? course.skills.join(', ') : (course.skills || '')} onChange={e => setCourse({...course, skills: e.target.value})} />
+        <input placeholder="Telegram Channel" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone mb-4" value={course.channel || ''} onChange={e => setCourse({...course, channel: e.target.value})} />
+        
+        <button 
+          onClick={handleSaveCourseDetails} 
+          disabled={isSavingDetails} 
+          className="w-full rounded bg-amber py-2 text-xs font-bold uppercase tracking-widest text-ink hover:bg-amber/90 disabled:opacity-50"
+        >
+          {isSavingDetails ? "Saving..." : "Save Course Details"}
+        </button>
+      </div>
+
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h2 className="font-display text-xl font-bold text-amber">Modules</h2>
-          <button
-            onClick={handleAddModule}
+          <h2 className="font-display text-xl font-bold text-amber">Modules & Units</h2>
+          <button 
+            onClick={handleAddModule} 
             className="rounded-md bg-amber px-4 py-2 text-xs font-bold uppercase tracking-widest text-ink hover:bg-amber/90"
           >
             + Add Module
@@ -178,8 +220,8 @@ export default function CourseEditor() {
 
         {modules.map((module, mIdx) => (
           <div key={module.id} className="rounded-lg border border-bone/10 bg-coal">
-            <div
-              className="flex items-center justify-between p-4 cursor-pointer hover:bg-ink/50"
+            <div 
+              className="flex items-center justify-between p-4 cursor-pointer hover:bg-ink/50" 
               onClick={() => setExpandedModule(expandedModule === module.id ? null : module.id)}
             >
               <div className="flex items-center gap-3">
@@ -188,96 +230,60 @@ export default function CourseEditor() {
                 </span>
                 <h3 className="font-display text-lg font-bold text-bone">{module.title}</h3>
               </div>
-              <span className="text-sm text-smoke">
-                {expandedModule === module.id ? "▼" : "▶"}
-              </span>
+              <span className="text-sm text-smoke">{expandedModule === module.id ? "▼" : "▶"}</span>
             </div>
 
             {expandedModule === module.id && (
               <div className="border-t border-bone/10 p-4 space-y-4">
                 <div className="space-y-2">
-                  {lessons
-                    .filter(l => l.module_id === module.id)
-                    .map((lesson, lIdx) => (
-                      <div key={lesson.id} className="rounded border border-bone/5 bg-ink p-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-mono text-smoke">{lIdx + 1}.</span>
-                            <span className="font-bold text-bone">{lesson.title}</span>
-                            <span className="text-xs text-smoke">({lesson.minutes} min)</span>
-                          </div>
-                          <button
-                            onClick={() => setExpandedLesson(expandedLesson === lesson.id ? null : lesson.id)}
-                            className="text-xs text-amber hover:underline"
-                          >
-                            {expandedLesson === lesson.id ? "Hide resources" : "Manage Resources"}
-                          </button>
+                  {units.filter(u => u.module_id === module.id).map((unit, uIdx) => (
+                    <div key={unit.id} className="rounded border border-bone/5 bg-ink p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono text-smoke">Unit {uIdx + 1}.</span>
+                          <span className="font-bold text-bone">{unit.title}</span>
                         </div>
-
-                        {expandedLesson === lesson.id && (
-                          <div className="mt-4 space-y-4 border-t border-bone/10 pt-4">
-                            <h4 className="text-sm font-bold text-amber">Add Resources</h4>
-                            
-                            <div className="grid gap-4 sm:grid-cols-2">
-                              <ResourceUploader
-                                courseId={courseId!}
-                                lessonId={lesson.id}
-                                type="video"
-                                onUploadComplete={(data) => handleAddResource(lesson.id, data)}
-                              />
-                              <ResourceUploader
-                                courseId={courseId!}
-                                lessonId={lesson.id}
-                                type="document"
-                                onUploadComplete={(data) => handleAddResource(lesson.id, data)}
-                              />
-                            </div>
-
-                            <div>
-                              <p className="text-xs text-smoke mb-2">Or Paste External Link (YouTube, Drive, etc.)</p>
-                              <ResourceLinker
-                                courseId={courseId!}
-                                lessonId={lesson.id}
-                                type="video"
-                                onResourceReady={(data) => handleAddResource(lesson.id, data)}
-                              />
-                            </div>
-
-                            {resources.filter(r => r.lessonId === lesson.id).length > 0 && (
-                              <div className="mt-4">
-                                <p className="text-xs font-bold text-amber mb-2">Existing Resources:</p>
-                                <div className="space-y-2">
-                                  {resources
-                                    .filter(r => r.lessonId === lesson.id)
-                                    .map(res => (
-                                      <div key={res.id} className="flex items-center justify-between rounded border border-bone/5 bg-coal p-3">
-                                        <div>
-                                          <p className="text-sm font-bold text-bone">{res.title}</p>
-                                          <p className="text-xs text-smoke">
-                                            {res.type} • {res.source_type || "external"}
-                                          </p>
-                                        </div>
-                                        <button
-                                          onClick={() => handleDeleteResource(res.id)}
-                                          className="text-xs text-alert hover:underline"
-                                        >
-                                          Delete
-                                        </button>
-                                      </div>
-                                    ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
+                        <button 
+                          onClick={() => setExpandedUnit(expandedUnit === unit.id ? null : unit.id)} 
+                          className="text-xs text-amber hover:underline"
+                        >
+                          {expandedUnit === unit.id ? "Hide Resources" : "Manage Resources"}
+                        </button>
                       </div>
-                    ))}
+
+                      {expandedUnit === unit.id && (
+                        <div className="mt-4 space-y-4 border-t border-bone/10 pt-4">
+                          <div className="space-y-2 mb-4">
+                            <p className="text-xs font-bold text-amber mb-2">Existing Unit Resources:</p>
+                            {resources.filter(r => r.unitId === unit.id).length === 0 && (
+                              <p className="text-xs text-smoke italic">No resources added to this unit yet.</p>
+                            )}
+                            {resources.filter(r => r.unitId === unit.id).map(res => (
+                              <div key={res.id} className="flex items-center justify-between rounded border border-bone/5 bg-coal p-3">
+                                <div>
+                                  <p className="text-sm font-bold text-bone">{res.title}</p>
+                                  <p className="text-xs text-smoke">{res.type} • {res.source_type || "external"}</p>
+                                </div>
+                                <button 
+                                  onClick={() => handleDeleteResource(res.id)} 
+                                  className="text-xs text-alert hover:underline"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                          <UnitResourceAdder courseId={courseId!} unitId={unit.id} onAdded={loadCourse} />
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
-                <button
-                  onClick={() => handleAddLesson(module.id)}
+                <button 
+                  onClick={() => handleAddUnit(module.id)} 
                   className="w-full rounded-md border border-dashed border-bone/20 py-2 text-xs font-bold uppercase tracking-widest text-smoke hover:border-amber hover:text-amber"
                 >
-                  + Add Lesson
+                  + Add Unit
                 </button>
               </div>
             )}
@@ -288,100 +294,105 @@ export default function CourseEditor() {
   );
 }
 
-// ==========================================
-// SUB-COMPONENTS FOR UPLOADING & LINKING
-// ==========================================
-
-function ResourceUploader({ courseId, lessonId, type, onUploadComplete }: any) {
+function UnitResourceAdder({ courseId, unitId, onAdded }: any) {
   const { toast } = useStore();
-  const [uploading, setUploading] = useState(false);
-  const [fileName, setFileName] = useState("");
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setFileName(file.name);
-      setUploading(true);
-      try {
-        const res = await api.uploadResource(file, null, courseId, lessonId, type);
-        toast(`${type} uploaded successfully!`);
-        onUploadComplete(res.data);
-        setFileName("");
-      } catch (e: any) {
-        toast(e.message || "Failed to upload file");
-      } finally {
-        setUploading(false);
-        if (e.target) e.target.value = "";
-      }
-    }
-  };
-
-  const accept = type === "video" ? "video/mp4,video/webm,video/ogg" : ".pdf,.doc,.docx,.txt,.zip";
-
-  return (
-    <div>
-      <p className="text-xs text-smoke mb-2">Upload {type === "video" ? "Video" : "Document"}</p>
-      <label className="flex-1 cursor-pointer rounded-md border border-dashed border-bone/20 bg-ink p-3 text-center text-sm text-smoke hover:border-amber hover:text-amber transition-colors block">
-        {uploading ? (
-          <span className="flex items-center justify-center gap-2">
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-amber border-t-transparent"></div>
-            Uploading {fileName}...
-          </span>
-        ) : fileName ? (
-          <span className="text-bone">✓ {fileName}</span>
-        ) : (
-          <span>Click to upload {type}</span>
-        )}
-        <input
-          type="file"
-          accept={accept}
-          className="hidden"
-          onChange={handleFileChange}
-          disabled={uploading}
-        />
-      </label>
-    </div>
-  );
-}
-
-function ResourceLinker({ courseId, lessonId, type, onResourceReady }: any) {
-  const { toast } = useStore();
-  const [url, setUrl] = useState("");
+  const [type, setType] = useState('video_youtube');
+  const [title, setTitle] = useState('');
+  const [url, setUrl] = useState('');
+  const [description, setDescription] = useState('');
+  const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
   const handleAdd = async () => {
-    if (!url) {
-      toast("Please enter a valid URL");
-      return;
-    }
+    if (!title.trim()) return toast("Resource title is required");
     setLoading(true);
     try {
-      const res = await api.uploadResource(null, url, courseId, lessonId, type);
-      toast("Resource added successfully!");
-      onResourceReady(res.data);
-      setUrl("");
-    } catch (e: any) {
-      toast(e.message || "Failed to add resource");
-    } finally {
-      setLoading(false);
+      let sourceUrl = url;
+      let sourceType = 'external';
+      let finalType = type;
+
+      if (type === 'video_r2' || type === 'document_pdf') {
+        if (!file) { toast("Please select a file to upload"); setLoading(false); return; }
+        const uploadType = type === 'video_r2' ? 'video' : 'document';
+        const res = await api.uploadResource(file, null, courseId, unitId, uploadType);
+        sourceUrl = res.data.url;
+        sourceType = 'r2';
+        finalType = uploadType === 'video' ? 'video_r2' : 'document_pdf';
+      }
+
+      await api.createResource({ 
+        lessonId: unitId, 
+        courseId, 
+        type: finalType, 
+        title, 
+        description, 
+        sourceUrl, 
+        sourceType, 
+        accessLevel: 'enrolled' 
+      });
+      toast("Resource added to unit!");
+      onAdded();
+      setTitle(''); setUrl(''); setDescription(''); setFile(null);
+    } catch (e: any) { 
+      toast(e.message || "Failed to add resource"); 
+    } finally { 
+      setLoading(false); 
     }
   };
 
   return (
-    <div className="space-y-2">
-      <input
-        type="url"
-        placeholder="https://youtube.com/watch?v=... or https://drive.google.com/..."
-        className="w-full rounded border border-bone/10 bg-coal p-2 text-sm text-bone focus:border-amber outline-none"
-        value={url}
-        onChange={(e) => setUrl(e.target.value)}
+    <div className="rounded-lg border border-bone/10 bg-ink p-4 space-y-3">
+      <p className="text-xs font-bold text-amber uppercase tracking-widest">Add New Resource</p>
+      <select 
+        className="w-full rounded border border-bone/10 bg-coal p-2 text-sm text-bone" 
+        value={type} 
+        onChange={e => setType(e.target.value)}
+      >
+        <option value="video_youtube">YouTube Video (Link)</option>
+        <option value="video_r2">Upload Video File (MP4)</option>
+        <option value="document_pdf">Upload PDF / Document</option>
+        <option value="link_external">External Link / Blog Post</option>
+        <option value="assignment">Text Assignment / Instructions</option>
+      </select>
+      
+      <input 
+        placeholder="Resource Title (e.g., Introduction to Python)" 
+        className="w-full rounded border border-bone/10 bg-coal p-2 text-sm text-bone" 
+        value={title} 
+        onChange={e => setTitle(e.target.value)} 
       />
-      <button
-        onClick={handleAdd}
-        disabled={loading}
+      
+      {(type === 'video_youtube' || type === 'link_external') && (
+        <input 
+          placeholder="Paste URL here..." 
+          className="w-full rounded border border-bone/10 bg-coal p-2 text-sm text-bone" 
+          value={url} 
+          onChange={e => setUrl(e.target.value)} 
+        />
+      )}
+      
+      {(type === 'video_r2' || type === 'document_pdf') && (
+        <input 
+          type="file" 
+          className="w-full text-sm text-smoke file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-xs file:font-bold file:bg-amber file:text-ink" 
+          onChange={e => setFile(e.target.files?.[0] || null)} 
+        />
+      )}
+
+      <textarea 
+        placeholder="Description / Instructions (Optional)" 
+        rows={2} 
+        className="w-full rounded border border-bone/10 bg-coal p-2 text-sm text-bone" 
+        value={description} 
+        onChange={e => setDescription(e.target.value)} 
+      />
+      
+      <button 
+        onClick={handleAdd} 
+        disabled={loading} 
         className="w-full rounded bg-mint py-2 text-xs font-bold uppercase tracking-widest text-ink hover:bg-mint/90 disabled:opacity-50"
       >
-        {loading ? "Processing..." : "Add External Link"}
+        {loading ? "Processing..." : "Add Resource to Unit"}
       </button>
     </div>
   );

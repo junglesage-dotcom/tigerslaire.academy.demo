@@ -7,7 +7,6 @@ import ConfirmDialog from "../components/ConfirmDialog";
 export default function AdminPanel() {
   const { user, go, toast } = useStore();
   
-  // Added 'progress' to the activeTab type
   const [activeTab, setActiveTab] = useState<'analytics' | 'progress' | 'applications' | 'payments' | 'installments' | 'mentors' | 'instructors' | 'courses' | 'users'>('analytics');
   
   const [apps, setApps] = useState<any[]>([]);
@@ -17,9 +16,8 @@ export default function AdminPanel() {
   const [instructors, setInstructors] = useState<any[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
-  const [progress, setProgress] = useState<any[]>([]); // NEW: Student Progress State
+  const [progress, setProgress] = useState<any[]>([]);
   
-  // Analytics State
   const [analytics, setAnalytics] = useState<any>({ 
     totalRevenue: 0, 
     totalStudents: 0, 
@@ -28,7 +26,6 @@ export default function AdminPanel() {
     recentStudents: [] 
   });
 
-  // Form states
   const [newMentor, setNewMentor] = useState({ name: "", bio: "", specialties: "tech", hourlyRate: 0, imageUrl: "" });
   const [newInstructor, setNewInstructor] = useState({ name: "", bio: "", courseIds: [] as string[] });
   const [newCourse, setNewCourse] = useState({
@@ -36,7 +33,6 @@ export default function AdminPanel() {
     weeks: 8, price: 0, priceUsd: 0, hue: "#ffa41b", icon: "python", summary: "", outcomes: "", skills: "", channel: ""
   });
 
-  // Dialog states
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -58,7 +54,6 @@ export default function AdminPanel() {
 
   const loadAll = async () => {
     try {
-      // Added api.getStudentProgress() to the Promise.all array
       const [analyticsRes, appsRes, payRes, adminInstallmentsRes, mentorsRes, instructorsRes, coursesRes, usersRes, progressRes] = await Promise.all([
         api.getAnalytics(),
         api.getAllApplications(),
@@ -68,7 +63,7 @@ export default function AdminPanel() {
         api.getInstructors(),
         api.getCourses(),
         api.getUsers(),
-        api.getStudentProgress() // NEW
+        api.getStudentProgress()
       ]);
       
       setAnalytics(analyticsRes.data);
@@ -79,7 +74,7 @@ export default function AdminPanel() {
       setInstructors(instructorsRes.data);
       setCourses(coursesRes.data);
       setUsers(usersRes.data);
-      setProgress(progressRes.data); // NEW
+      setProgress(progressRes.data);
     } catch (e) {
       toast("Failed to load admin data");
     }
@@ -122,6 +117,7 @@ export default function AdminPanel() {
         try {
           await api.deleteMentor(id);
           toast("Mentor deleted");
+          await new Promise(r => setTimeout(r, 300));
           loadAll();
         } catch (e: any) {
           toast(e.message);
@@ -160,6 +156,7 @@ export default function AdminPanel() {
         try {
           await api.deleteInstructor(id);
           toast("Instructor deleted");
+          await new Promise(r => setTimeout(r, 300));
           loadAll();
         } catch (e: any) {
           toast(e.message);
@@ -190,13 +187,14 @@ export default function AdminPanel() {
     setConfirmDialog({
       isOpen: true,
       title: "Delete Course",
-      message: `Are you sure you want to delete course ${code}? This will remove it from the catalog and cannot be undone.`,
+      message: `Are you sure you want to delete course ${code}? This will permanently remove it and all its units, enrollments, and payments.`,
       isDestructive: true,
       onConfirm: async () => {
         setIsDialogLoading(true);
         try {
           await api.deleteCourse(id);
-          toast("Course deleted");
+          toast("Course and all associated data deleted");
+          await new Promise(r => setTimeout(r, 500)); // Delay to allow backend cascade delete to finish
           loadAll();
         } catch (e: any) {
           toast(e.message);
@@ -212,13 +210,14 @@ export default function AdminPanel() {
     setConfirmDialog({
       isOpen: true,
       title: "Delete User Account",
-      message: `Are you sure you want to permanently delete ${name}'s account and all associated data? This cannot be undone.`,
+      message: `Are you sure you want to permanently delete ${name}'s account? This will wipe all their enrollments, payments, and progress.`,
       isDestructive: true,
       onConfirm: async () => {
         setIsDialogLoading(true);
         try {
           await api.deleteUser(id);
-          toast("User account deleted");
+          toast("User account and associated data deleted");
+          await new Promise(r => setTimeout(r, 500)); // Delay to allow backend cascade delete to finish
           loadAll();
         } catch (e: any) {
           toast(e.message);
@@ -232,7 +231,7 @@ export default function AdminPanel() {
 
   const tabs = [
     { id: 'analytics', label: 'Analytics', icon: '📊' },
-    { id: 'progress', label: 'Student Progress', count: progress.length }, // NEW
+    { id: 'progress', label: 'Student Progress', count: progress.length },
     { id: 'applications', label: 'Applications', count: apps.filter(a => a.status === 'pending').length },
     { id: 'payments', label: 'Payments', count: payments.filter(p => p.status === 'proof_submitted').length },
     { id: 'installments', label: 'Installments', count: installments.length },
@@ -246,7 +245,6 @@ export default function AdminPanel() {
     <div className="mx-auto max-w-7xl px-5 py-12 sm:px-8">
       <h1 className="font-display text-3xl font-extrabold text-bone mb-8">Admin Control Panel</h1>
 
-      {/* Tabs */}
       <div className="mb-8 flex gap-2 border-b border-bone/10 overflow-x-auto">
         {tabs.map(t => (
           <button
@@ -262,41 +260,27 @@ export default function AdminPanel() {
         ))}
       </div>
 
-      {/* ==========================================
-          ANALYTICS TAB
-      ========================================== */}
       {activeTab === 'analytics' && (
         <div className="space-y-8">
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-xl border border-bone/10 bg-coal p-6">
               <p className="text-xs font-bold uppercase tracking-widest text-smoke mb-2">Total Revenue</p>
-              <p className="font-display text-3xl font-extrabold text-mint">
-                ₦{analytics.totalRevenue.toLocaleString()}
-              </p>
+              <p className="font-display text-3xl font-extrabold text-mint">₦{analytics.totalRevenue.toLocaleString()}</p>
               <p className="text-xs text-smoke mt-2">From successful payments</p>
             </div>
-            
             <div className="rounded-xl border border-bone/10 bg-coal p-6">
               <p className="text-xs font-bold uppercase tracking-widest text-smoke mb-2">Total Students</p>
-              <p className="font-display text-3xl font-extrabold text-tgsky">
-                {analytics.totalStudents.toLocaleString()}
-              </p>
+              <p className="font-display text-3xl font-extrabold text-tgsky">{analytics.totalStudents.toLocaleString()}</p>
               <p className="text-xs text-smoke mt-2">Registered learners</p>
             </div>
-
             <div className="rounded-xl border border-bone/10 bg-coal p-6">
               <p className="text-xs font-bold uppercase tracking-widest text-smoke mb-2">Active Courses</p>
-              <p className="font-display text-3xl font-extrabold text-amber">
-                {analytics.totalCourses}
-              </p>
+              <p className="font-display text-3xl font-extrabold text-amber">{analytics.totalCourses}</p>
               <p className="text-xs text-smoke mt-2">Published to catalog</p>
             </div>
-
             <div className="rounded-xl border border-bone/10 bg-coal p-6">
               <p className="text-xs font-bold uppercase tracking-widest text-smoke mb-2">Pending Mentorships</p>
-              <p className="font-display text-3xl font-extrabold text-ember">
-                {analytics.pendingApplications}
-              </p>
+              <p className="font-display text-3xl font-extrabold text-ember">{analytics.pendingApplications}</p>
               <p className="text-xs text-smoke mt-2">Awaiting your review</p>
             </div>
           </div>
@@ -318,9 +302,7 @@ export default function AdminPanel() {
                         <p className="text-xs text-smoke">{student.email}</p>
                       </div>
                     </div>
-                    <p className="text-xs text-smoke">
-                      Joined {new Date(student.joined_at).toLocaleDateString()}
-                    </p>
+                    <p className="text-xs text-smoke">Joined {new Date(student.joined_at).toLocaleDateString()}</p>
                   </div>
                 ))}
               </div>
@@ -329,9 +311,6 @@ export default function AdminPanel() {
         </div>
       )}
 
-      {/* ==========================================
-          STUDENT PROGRESS TAB (NEW)
-      ========================================== */}
       {activeTab === 'progress' && (
         <div className="rounded-lg border border-bone/10 bg-coal p-6">
           <h2 className="font-display text-xl font-bold text-amber mb-4">Student Engagement & Progress</h2>
@@ -360,31 +339,18 @@ export default function AdminPanel() {
                         <p className="font-bold text-bone">{p.course_code}</p>
                         <p className="text-xs text-smoke truncate max-w-[200px]">{p.course_title}</p>
                       </td>
-                      <td className="py-3 px-2 text-smoke">
-                        {new Date(p.enrolled_at).toLocaleDateString()}
-                      </td>
+                      <td className="py-3 px-2 text-smoke">{new Date(p.enrolled_at).toLocaleDateString()}</td>
                       <td className="py-3 px-2">
                         {p.quiz_passed === 1 ? (
-                          <span className="rounded bg-mint/20 px-2 py-1 text-[10px] font-bold uppercase text-mint">
-                            Passed ({p.quiz_score}/{p.quiz_total})
-                          </span>
+                          <span className="rounded bg-mint/20 px-2 py-1 text-[10px] font-bold uppercase text-mint">Passed ({p.quiz_score}/{p.quiz_total})</span>
                         ) : p.quiz_score ? (
-                          <span className="rounded bg-amber/20 px-2 py-1 text-[10px] font-bold uppercase text-amber">
-                            In Progress ({p.quiz_score}/{p.quiz_total})
-                          </span>
+                          <span className="rounded bg-amber/20 px-2 py-1 text-[10px] font-bold uppercase text-amber">In Progress ({p.quiz_score}/{p.quiz_total})</span>
                         ) : (
-                          <span className="rounded bg-bone/5 px-2 py-1 text-[10px] font-bold uppercase text-smoke">
-                            Not Started
-                          </span>
+                          <span className="rounded bg-bone/5 px-2 py-1 text-[10px] font-bold uppercase text-smoke">Not Started</span>
                         )}
                       </td>
                       <td className="py-3 px-2 text-right">
-                        <button 
-                          onClick={() => go({ view: 'course', courseId: p.course_id })}
-                          className="text-xs text-tgsky hover:underline font-bold"
-                        >
-                          View Course
-                        </button>
+                        <button onClick={() => go({ view: 'course', courseId: p.course_id })} className="text-xs text-tgsky hover:underline font-bold">View Course</button>
                       </td>
                     </tr>
                   ))}
@@ -395,7 +361,6 @@ export default function AdminPanel() {
         </div>
       )}
 
-      {/* Applications Tab */}
       {activeTab === 'applications' && (
         <div className="rounded-lg border border-bone/10 bg-coal p-6">
           <h2 className="font-display text-xl font-bold text-amber mb-4">Pending Applications</h2>
@@ -411,32 +376,16 @@ export default function AdminPanel() {
                   <p className="text-xs text-smoke">Payment: {app.payment_status}</p>
                 </div>
                 <div className="mt-4 flex gap-2">
-                  <input
-                    type="number"
-                    placeholder="Propose Price (₦)"
-                    className="flex-1 rounded border border-bone/10 bg-coal p-2 text-sm text-bone"
-                    id={`price-${app.id}`}
-                  />
-                  <button
-                    onClick={() => {
-                      const price = parseInt((document.getElementById(`price-${app.id}`) as HTMLInputElement).value);
-                      if (price) handlePropose(app.id, price);
-                    }}
-                    className="rounded bg-amber px-4 py-2 text-xs font-bold uppercase text-ink hover:bg-amber/90 transition-colors"
-                  >
-                    Propose
-                  </button>
+                  <input type="number" placeholder="Propose Price (₦)" className="flex-1 rounded border border-bone/10 bg-coal p-2 text-sm text-bone" id={`price-${app.id}`} />
+                  <button onClick={() => { const price = parseInt((document.getElementById(`price-${app.id}`) as HTMLInputElement).value); if (price) handlePropose(app.id, price); }} className="rounded bg-amber px-4 py-2 text-xs font-bold uppercase text-ink hover:bg-amber/90 transition-colors">Propose</button>
                 </div>
               </div>
             ))}
-            {apps.filter(a => a.status === 'pending').length === 0 && (
-              <p className="text-sm text-smoke text-center py-8">No pending applications.</p>
-            )}
+            {apps.filter(a => a.status === 'pending').length === 0 && <p className="text-sm text-smoke text-center py-8">No pending applications.</p>}
           </div>
         </div>
       )}
 
-      {/* Payments Tab */}
       {activeTab === 'payments' && (
         <div className="rounded-lg border border-bone/10 bg-coal p-6">
           <h2 className="font-display text-xl font-bold text-amber mb-4">Pending Bank Transfers</h2>
@@ -446,51 +395,17 @@ export default function AdminPanel() {
                 <div>
                   <p className="font-bold text-bone">{p.user_name} - {p.course_title || 'Mentorship'}</p>
                   <p className="text-xs text-smoke mt-1">Ref: {p.reference}</p>
-                  <p className="text-sm text-amber font-bold mt-2">
-                    {p.currency === 'USD' ? '$' : '₦'}{p.amount.toLocaleString()}
-                  </p>
-                  {p.proof_url && (
-                    <a href={p.proof_url} target="_blank" rel="noreferrer" className="inline-block mt-2 text-xs text-tgsky underline hover:text-tgsky/80">
-                      View Payment Slip ↗
-                    </a>
-                  )}
+                  <p className="text-sm text-amber font-bold mt-2">{p.currency === 'USD' ? '$' : '₦'}{p.amount.toLocaleString()}</p>
+                  {p.proof_url && <a href={p.proof_url} target="_blank" rel="noreferrer" className="inline-block mt-2 text-xs text-tgsky underline hover:text-tgsky/80">View Payment Slip ↗</a>}
                 </div>
-                <button
-                  onClick={() => {
-                    setConfirmDialog({
-                      isOpen: true,
-                      title: "Approve Payment",
-                      message: `Approve this payment and enroll ${p.user_name}?`,
-                      isDestructive: false,
-                      onConfirm: async () => {
-                        setIsDialogLoading(true);
-                        try {
-                          await api.approvePayment(p.reference);
-                          toast("Payment approved and user enrolled!");
-                          loadAll();
-                        } catch (e: any) {
-                          toast(e.message);
-                        } finally {
-                          setIsDialogLoading(false);
-                          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
-                        }
-                      }
-                    });
-                  }}
-                  className="self-start rounded bg-mint px-6 py-2 text-xs font-bold uppercase text-ink hover:bg-mint/90 transition-colors"
-                >
-                  Approve & Enroll
-                </button>
+                <button onClick={() => { setConfirmDialog({ isOpen: true, title: "Approve Payment", message: `Approve this payment and enroll ${p.user_name}?`, isDestructive: false, onConfirm: async () => { setIsDialogLoading(true); try { await api.approvePayment(p.reference); toast("Payment approved and user enrolled!"); loadAll(); } catch (e: any) { toast(e.message); } finally { setIsDialogLoading(false); setConfirmDialog(prev => ({ ...prev, isOpen: false })); } } }); }} className="self-start rounded bg-mint px-6 py-2 text-xs font-bold uppercase text-ink hover:bg-mint/90 transition-colors">Approve & Enroll</button>
               </div>
             ))}
-            {payments.filter(p => p.status === 'proof_submitted').length === 0 && (
-              <p className="text-sm text-smoke text-center py-8">No pending bank transfer proofs to review.</p>
-            )}
+            {payments.filter(p => p.status === 'proof_submitted').length === 0 && <p className="text-sm text-smoke text-center py-8">No pending bank transfer proofs to review.</p>}
           </div>
         </div>
       )}
 
-      {/* Installments Tab */}
       {activeTab === 'installments' && (
         <div className="rounded-lg border border-bone/10 bg-coal p-6">
           <h2 className="font-display text-xl font-bold text-amber mb-4">Pending Installment Proofs</h2>
@@ -501,63 +416,26 @@ export default function AdminPanel() {
                   <p className="font-bold text-bone">{inst.user_name} - {inst.course_title || 'Course Installment'}</p>
                   <p className="text-xs text-smoke mt-1">Installment ID: {inst.id}</p>
                   <p className="text-sm text-amber font-bold mt-2">₦{inst.amount.toLocaleString()}</p>
-                  {inst.proof_url && (
-                    <a href={inst.proof_url} target="_blank" rel="noreferrer" className="inline-block mt-2 text-xs text-tgsky underline hover:text-tgsky/80">
-                      View Payment Slip ↗
-                    </a>
-                  )}
+                  {inst.proof_url && <a href={inst.proof_url} target="_blank" rel="noreferrer" className="inline-block mt-2 text-xs text-tgsky underline hover:text-tgsky/80">View Payment Slip ↗</a>}
                 </div>
-                <button
-                  onClick={() => {
-                    setConfirmDialog({
-                      isOpen: true,
-                      title: "Approve Installment",
-                      message: `Mark this installment as paid for ${inst.user_name}?`,
-                      isDestructive: false,
-                      onConfirm: async () => {
-                        setIsDialogLoading(true);
-                        try {
-                          await api.approveInstallment(inst.id);
-                          toast("Installment approved!");
-                          loadAll();
-                        } catch (e: any) {
-                          toast(e.message);
-                        } finally {
-                          setIsDialogLoading(false);
-                          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
-                        }
-                      }
-                    });
-                  }}
-                  className="self-start rounded bg-mint px-6 py-2 text-xs font-bold uppercase text-ink hover:bg-mint/90 transition-colors"
-                >
-                  Approve & Continue Access
-                </button>
+                <button onClick={() => { setConfirmDialog({ isOpen: true, title: "Approve Installment", message: `Mark this installment as paid for ${inst.user_name}?`, isDestructive: false, onConfirm: async () => { setIsDialogLoading(true); try { await api.approveInstallment(inst.id); toast("Installment approved!"); loadAll(); } catch (e: any) { toast(e.message); } finally { setIsDialogLoading(false); setConfirmDialog(prev => ({ ...prev, isOpen: false })); } } }); }} className="self-start rounded bg-mint px-6 py-2 text-xs font-bold uppercase text-ink hover:bg-mint/90 transition-colors">Approve</button>
               </div>
             ))}
-            {installments.length === 0 && (
-              <p className="text-sm text-smoke text-center py-8">No pending installment proofs to review.</p>
-            )}
+            {installments.length === 0 && <p className="text-sm text-smoke text-center py-8">No pending installment proofs to review.</p>}
           </div>
         </div>
       )}
 
-      {/* Mentors Tab */}
       {activeTab === 'mentors' && (
         <div className="grid gap-6 lg:grid-cols-2">
           <div className="rounded-lg border border-bone/10 bg-coal p-6">
             <h2 className="font-display text-xl font-bold text-amber mb-4">Add Mentor</h2>
             <form onSubmit={handleAddMentor} className="space-y-3">
-              <input required placeholder="Name" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
-                value={newMentor.name} onChange={e => setNewMentor({...newMentor, name: e.target.value})} />
-              <input placeholder="Image URL" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
-                value={newMentor.imageUrl} onChange={e => setNewMentor({...newMentor, imageUrl: e.target.value})} />
-              <textarea required placeholder="Bio" rows={3} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
-                value={newMentor.bio} onChange={e => setNewMentor({...newMentor, bio: e.target.value})} />
-              <input placeholder="Specialties (comma-separated)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
-                value={newMentor.specialties} onChange={e => setNewMentor({...newMentor, specialties: e.target.value})} />
-              <input type="number" placeholder="Hourly Rate (₦)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
-                value={newMentor.hourlyRate} onChange={e => setNewMentor({...newMentor, hourlyRate: parseInt(e.target.value) || 0})} />
+              <input required placeholder="Name" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newMentor.name} onChange={e => setNewMentor({...newMentor, name: e.target.value})} />
+              <input placeholder="Image URL" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newMentor.imageUrl} onChange={e => setNewMentor({...newMentor, imageUrl: e.target.value})} />
+              <textarea required placeholder="Bio" rows={3} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newMentor.bio} onChange={e => setNewMentor({...newMentor, bio: e.target.value})} />
+              <input placeholder="Specialties (comma-separated)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newMentor.specialties} onChange={e => setNewMentor({...newMentor, specialties: e.target.value})} />
+              <input type="number" placeholder="Hourly Rate (₦)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newMentor.hourlyRate} onChange={e => setNewMentor({...newMentor, hourlyRate: parseInt(e.target.value) || 0})} />
               <button type="submit" className="w-full rounded bg-mint py-2 text-xs font-bold uppercase text-ink hover:bg-mint/90 transition-colors">Add Mentor</button>
             </form>
           </div>
@@ -567,13 +445,7 @@ export default function AdminPanel() {
               {mentors.map(m => (
                 <div key={m.id} className="rounded border border-bone/5 bg-ink p-3 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3 flex-1 min-w-0">
-                    {m.image_url ? (
-                      <img src={m.image_url} alt={m.name} className="h-10 w-10 rounded-full object-cover shrink-0" />
-                    ) : (
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber/20 text-amber font-bold">
-                        {m.name.charAt(0)}
-                      </div>
-                    )}
+                    {m.image_url ? <img src={m.image_url} alt={m.name} className="h-10 w-10 rounded-full object-cover shrink-0" /> : <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber/20 text-amber font-bold">{m.name.charAt(0)}</div>}
                     <div className="flex-1 min-w-0">
                       <p className="font-bold text-bone truncate">{m.name}</p>
                       <p className="text-xs text-smoke truncate">{m.specialties?.join(', ')}</p>
@@ -589,33 +461,19 @@ export default function AdminPanel() {
         </div>
       )}
 
-      {/* Instructors Tab */}
       {activeTab === 'instructors' && (
         <div className="grid gap-6 lg:grid-cols-2">
           <div className="rounded-lg border border-bone/10 bg-coal p-6">
             <h2 className="font-display text-xl font-bold text-amber mb-4">Add Instructor</h2>
             <form onSubmit={handleAddInstructor} className="space-y-3">
-              <input required placeholder="Name" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
-                value={newInstructor.name} onChange={e => setNewInstructor({...newInstructor, name: e.target.value})} />
-              <textarea required placeholder="Bio" rows={3} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
-                value={newInstructor.bio} onChange={e => setNewInstructor({...newInstructor, bio: e.target.value})} />
+              <input required placeholder="Name" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newInstructor.name} onChange={e => setNewInstructor({...newInstructor, name: e.target.value})} />
+              <textarea required placeholder="Bio" rows={3} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newInstructor.bio} onChange={e => setNewInstructor({...newInstructor, bio: e.target.value})} />
               <div>
                 <p className="text-xs text-smoke mb-2">Assign to courses:</p>
                 <div className="space-y-1 max-h-40 overflow-y-auto pr-2">
                   {courses.map(c => (
                     <label key={c.id} className="flex items-center gap-2 text-sm text-bone cursor-pointer hover:text-amber">
-                      <input
-                        type="checkbox"
-                        checked={newInstructor.courseIds.includes(c.id)}
-                        onChange={e => {
-                          if (e.target.checked) {
-                            setNewInstructor({...newInstructor, courseIds: [...newInstructor.courseIds, c.id]});
-                          } else {
-                            setNewInstructor({...newInstructor, courseIds: newInstructor.courseIds.filter(id => id !== c.id)});
-                          }
-                        }}
-                        className="accent-amber"
-                      />
+                      <input type="checkbox" checked={newInstructor.courseIds.includes(c.id)} onChange={e => { if (e.target.checked) setNewInstructor({...newInstructor, courseIds: [...newInstructor.courseIds, c.id]}); else setNewInstructor({...newInstructor, courseIds: newInstructor.courseIds.filter(id => id !== c.id)}); }} className="accent-amber" />
                       {c.code} - {c.title}
                     </label>
                   ))}
@@ -642,42 +500,37 @@ export default function AdminPanel() {
         </div>
       )}
 
-      {/* Courses Tab */}
       {activeTab === 'courses' && (
         <div className="grid gap-6 lg:grid-cols-2">
           <div className="rounded-lg border border-bone/10 bg-coal p-6">
             <h2 className="font-display text-xl font-bold text-amber mb-4">Create New Course</h2>
             <form onSubmit={handleAddCourse} className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <input required placeholder="Code (e.g., DS401)" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
-                  value={newCourse.code} onChange={e => setNewCourse({...newCourse, code: e.target.value})} />
-                <input required placeholder="Title" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
-                  value={newCourse.title} onChange={e => setNewCourse({...newCourse, title: e.target.value})} />
+                <input required placeholder="Code (e.g., DS401)" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newCourse.code} onChange={e => setNewCourse({...newCourse, code: e.target.value})} />
+                <input required placeholder="Title" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newCourse.title} onChange={e => setNewCourse({...newCourse, title: e.target.value})} />
               </div>
-              <input required placeholder="Tagline" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
-                value={newCourse.tagline} onChange={e => setNewCourse({...newCourse, tagline: e.target.value})} />
+              <input required placeholder="Tagline" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newCourse.tagline} onChange={e => setNewCourse({...newCourse, tagline: e.target.value})} />
               <div className="grid grid-cols-3 gap-3">
-                <select className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
-                  value={newCourse.level} onChange={e => setNewCourse({...newCourse, level: e.target.value})}>
-                  <option>Beginner</option><option>Intermediate</option><option>Advanced</option>
-                </select>
-                <input type="number" placeholder="Weeks" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
-                  value={newCourse.weeks} onChange={e => setNewCourse({...newCourse, weeks: parseInt(e.target.value) || 0})} />
-                <input type="number" placeholder="Price (₦)" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
-                  value={newCourse.price} onChange={e => setNewCourse({...newCourse, price: parseInt(e.target.value) || 0})} />
+                <select className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newCourse.level} onChange={e => setNewCourse({...newCourse, level: e.target.value})}><option>Beginner</option><option>Intermediate</option><option>Advanced</option></select>
+                <input type="number" placeholder="Weeks" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newCourse.weeks} onChange={e => setNewCourse({...newCourse, weeks: parseInt(e.target.value) || 0})} />
+                <input placeholder="Telegram Channel" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newCourse.channel} onChange={e => setNewCourse({...newCourse, channel: e.target.value})} />
               </div>
-              <div className="grid grid-cols-1 gap-3">
-                <input type="number" placeholder="Price ($ USD)" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
-                  value={newCourse.priceUsd} onChange={e => setNewCourse({...newCourse, priceUsd: parseInt(e.target.value) || 0})} />
+              
+              {/* PRICING FIELDS HIGHLIGHTED */}
+              <div className="grid grid-cols-2 gap-3 p-3 rounded-lg border border-amber/30 bg-amber/5">
+                <div>
+                  <label className="text-[10px] font-bold uppercase text-amber block mb-1">Price (₦ NGN)</label>
+                  <input type="number" required placeholder="e.g. 50000" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone" value={newCourse.price} onChange={e => setNewCourse({...newCourse, price: parseInt(e.target.value) || 0})} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase text-amber block mb-1">Price ($ USD)</label>
+                  <input type="number" required placeholder="e.g. 65" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone" value={newCourse.priceUsd} onChange={e => setNewCourse({...newCourse, priceUsd: parseInt(e.target.value) || 0})} />
+                </div>
               </div>
-              <textarea required placeholder="Summary" rows={2} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
-                value={newCourse.summary} onChange={e => setNewCourse({...newCourse, summary: e.target.value})} />
-              <textarea placeholder="Outcomes (one per line)" rows={3} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
-                value={newCourse.outcomes} onChange={e => setNewCourse({...newCourse, outcomes: e.target.value})} />
-              <input placeholder="Skills (comma-separated)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
-                value={newCourse.skills} onChange={e => setNewCourse({...newCourse, skills: e.target.value})} />
-              <input placeholder="Telegram channel" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
-                value={newCourse.channel} onChange={e => setNewCourse({...newCourse, channel: e.target.value})} />
+
+              <textarea required placeholder="Summary" rows={2} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newCourse.summary} onChange={e => setNewCourse({...newCourse, summary: e.target.value})} />
+              <textarea placeholder="Outcomes (one per line)" rows={3} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newCourse.outcomes} onChange={e => setNewCourse({...newCourse, outcomes: e.target.value})} />
+              <input placeholder="Skills (comma-separated)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newCourse.skills} onChange={e => setNewCourse({...newCourse, skills: e.target.value})} />
               <button type="submit" className="w-full rounded bg-amber py-2 text-xs font-bold uppercase text-ink hover:bg-amber/90 transition-colors">Create Course</button>
             </form>
           </div>
@@ -688,21 +541,11 @@ export default function AdminPanel() {
                 <div key={c.id} className="rounded border border-bone/5 bg-ink p-3 flex justify-between items-center">
                   <div className="min-w-0 flex-1">
                     <p className="font-bold text-bone truncate">{c.code} - {c.title}</p>
-                    <p className="text-xs text-smoke truncate">{c.weeks} weeks · ₦{c.price?.toLocaleString()}</p>
+                    <p className="text-xs text-smoke truncate">{c.weeks} weeks · ₦{c.price?.toLocaleString()} / ${c.price_usd?.toLocaleString()}</p>
                   </div>
                   <div className="flex gap-2 shrink-0 ml-2">
-                    <button
-                      onClick={() => go({ view: "course-editor", courseId: c.id } as any)}
-                      className="rounded bg-amber/20 px-3 py-1 text-xs font-bold text-amber hover:bg-amber/30 transition-colors"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => promptDeleteCourse(c.id, c.code)}
-                      className="rounded bg-alert/10 px-3 py-1 text-xs font-bold text-alert hover:bg-alert/20 transition-colors"
-                    >
-                      Delete
-                    </button>
+                    <button onClick={() => go({ view: "course-editor", courseId: c.id } as any)} className="rounded bg-amber/20 px-3 py-1 text-xs font-bold text-amber hover:bg-amber/30 transition-colors">Edit</button>
+                    <button onClick={() => promptDeleteCourse(c.id, c.code)} className="rounded bg-alert/10 px-3 py-1 text-xs font-bold text-alert hover:bg-alert/20 transition-colors">Delete</button>
                   </div>
                 </div>
               ))}
@@ -712,7 +555,6 @@ export default function AdminPanel() {
         </div>
       )}
 
-      {/* Users Tab */}
       {activeTab === 'users' && (
         <div className="rounded-lg border border-bone/10 bg-coal p-6">
           <h2 className="font-display text-xl font-bold text-amber mb-4">Registered Users ({users.length})</h2>
@@ -732,22 +574,9 @@ export default function AdminPanel() {
                   <tr key={u.id} className="border-b border-bone/5 hover:bg-ink/50 transition-colors">
                     <td className="py-3 px-2 font-bold text-bone">{u.name}</td>
                     <td className="py-3 px-2 text-smoke">{u.email}</td>
-                    <td className="py-3 px-2">
-                      <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase ${u.role === 'admin' ? 'bg-amber/20 text-amber' : 'bg-bone/5 text-bone'}`}>
-                        {u.role}
-                      </span>
-                    </td>
+                    <td className="py-3 px-2"><span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase ${u.role === 'admin' ? 'bg-amber/20 text-amber' : 'bg-bone/5 text-bone'}`}>{u.role}</span></td>
                     <td className="py-3 px-2 text-smoke">{u.telegram_id ? 'Linked' : '-'}</td>
-                    <td className="py-3 px-2 text-right">
-                      {u.id !== user?.id && (
-                        <button 
-                          onClick={() => promptDeleteUser(u.id, u.name)}
-                          className="text-xs text-alert hover:underline font-bold"
-                        >
-                          Delete
-                        </button>
-                      )}
-                    </td>
+                    <td className="py-3 px-2 text-right">{u.id !== user?.id && <button onClick={() => promptDeleteUser(u.id, u.name)} className="text-xs text-alert hover:underline font-bold">Delete</button>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -757,16 +586,7 @@ export default function AdminPanel() {
         </div>
       )}
 
-      {/* Global Confirm Dialog */}
-      <ConfirmDialog
-        isOpen={confirmDialog.isOpen}
-        title={confirmDialog.title}
-        message={confirmDialog.message}
-        isDestructive={confirmDialog.isDestructive}
-        onConfirm={confirmDialog.onConfirm}
-        onCancel={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
-        isLoading={isDialogLoading}
-      />
+      <ConfirmDialog isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} isDestructive={confirmDialog.isDestructive} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))} isLoading={isDialogLoading} />
     </div>
   );
 }

@@ -44,7 +44,7 @@ async function logAudit(env, adminId, action, details) {
   } catch (e) { console.error('Failed to log audit:', e); }
 }
 
-// NEW: Helper to securely hash passwords using SHA-256
+// Helper to securely hash passwords using SHA-256
 async function hashPassword(password) {
   const encoder = new TextEncoder();
   const data = encoder.encode(password);
@@ -450,7 +450,7 @@ export default {
       }
 
       // ============================================
-      // ADMIN ANALYTICS & PROGRESS (NEW)
+      // ADMIN ANALYTICS & PROGRESS
       // ============================================
       if (path === '/api/admin/analytics' && method === 'GET') {
         const token = getToken();
@@ -593,12 +593,19 @@ export default {
         return json({ success: true });
       }
 
+      // ============================================
+      // FIXED: LESSON DELETION WITH CASCADE
+      // ============================================
       if (path.startsWith('/api/admin/lessons/') && method === 'DELETE') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
         const lessonId = path.split('/')[3];
+        
+        // Delete resources tied to this lesson first
+        await env.DB.prepare('DELETE FROM resources WHERE lesson_id = ?').bind(lessonId).run();
         await env.DB.prepare('DELETE FROM lessons WHERE id = ?').bind(lessonId).run();
+        
         await logAudit(env, token, 'LESSON_DELETED', `Deleted lesson ID: ${lessonId}`);
         return json({ success: true });
       }
@@ -729,11 +736,31 @@ export default {
         return json({ success: true });
       }
 
+      // ============================================
+      // FIXED: COURSE DELETION WITH CASCADE
+      // ============================================
       if (path.startsWith('/api/admin/courses/') && method === 'DELETE' && !path.includes('/modules') && !path.includes('/lessons') && !path.includes('/quiz')) {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
         const courseId = path.split('/')[3];
+        
+        // 1. Delete all resources tied to lessons in this course
+        const lessons = await env.DB.prepare('SELECT id FROM lessons WHERE course_id = ?').bind(courseId).all();
+        for (const l of lessons.results) {
+          await env.DB.prepare('DELETE FROM resources WHERE lesson_id = ?').bind(l.id).run();
+        }
+        
+        // 2. Delete all dependent records
+        await env.DB.prepare('DELETE FROM lessons WHERE course_id = ?').bind(courseId).run();
+        await env.DB.prepare('DELETE FROM modules WHERE course_id = ?').bind(courseId).run();
+        await env.DB.prepare('DELETE FROM quiz_questions WHERE course_id = ?').bind(courseId).run();
+        await env.DB.prepare('DELETE FROM enrollments WHERE course_id = ?').bind(courseId).run();
+        await env.DB.prepare('DELETE FROM payments WHERE course_id = ?').bind(courseId).run();
+        await env.DB.prepare('DELETE FROM installments WHERE course_id = ?').bind(courseId).run();
+        await env.DB.prepare('DELETE FROM course_instructors WHERE course_id = ?').bind(courseId).run();
+        
+        // 3. Finally delete the course
         await env.DB.prepare('DELETE FROM courses WHERE id = ?').bind(courseId).run();
         await logAudit(env, token, 'COURSE_DELETED', `Deleted course ID: ${courseId}`);
         return json({ success: true });
@@ -747,12 +774,26 @@ export default {
         return json({ data: users.results });
       }
 
+      // ============================================
+      // FIXED: USER DELETION WITH CASCADE
+      // ============================================
       if (path.startsWith('/api/admin/users/') && method === 'DELETE') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
         const userId = path.split('/')[3];
         if (userId === token) return error('Cannot delete yourself', 400);
+        
+        // Delete all dependent records first to avoid foreign key constraint errors
+        await env.DB.prepare('DELETE FROM enrollments WHERE user_id = ?').bind(userId).run();
+        await env.DB.prepare('DELETE FROM payments WHERE user_id = ?').bind(userId).run();
+        await env.DB.prepare('DELETE FROM installments WHERE user_id = ?').bind(userId).run();
+        await env.DB.prepare('DELETE FROM mentorship_applications WHERE user_id = ?').bind(userId).run();
+        await env.DB.prepare('DELETE FROM counseling_sessions WHERE user_id = ?').bind(userId).run();
+        await env.DB.prepare('DELETE FROM meetup_attendees WHERE user_id = ?').bind(userId).run();
+        await env.DB.prepare('DELETE FROM lesson_completions WHERE user_id = ?').bind(userId).run();
+        
+        // Finally delete the user
         await env.DB.prepare('DELETE FROM users WHERE id = ?').bind(userId).run();
         await logAudit(env, token, 'USER_DELETED', `Deleted user ID: ${userId}`);
         return json({ success: true });
