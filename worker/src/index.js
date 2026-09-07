@@ -59,6 +59,10 @@ export default {
     const path = url.pathname;
     const method = request.method;
 
+    // ✅ FIX: Remove empty strings caused by the leading slash so indexes align:
+    // "/api/admin/courses/course_123/modules" -> ["api","admin","courses","course_123","modules"]
+    const parts = path.split('/').filter(Boolean);
+
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
@@ -198,7 +202,7 @@ export default {
       }
 
       if (path.startsWith('/api/courses/') && method === 'GET') {
-        const courseId = path.split('/').pop();
+        const courseId = parts[2]; // ✅ FIX
         const course = await env.DB.prepare('SELECT * FROM courses WHERE id = ?').bind(courseId).first();
         if (!course) return error('Course not found', 404);
 
@@ -385,7 +389,7 @@ export default {
 
       if (path.match(/\/api\/mentorship\/application\/[^/]+\/propose/) && method === 'PUT') {
         const token = getToken();
-        const appId = path.split('/')[3];
+        const appId = parts[3]; // ✅ FIX
         const { price, mentorId, firstSessionDate, notes } = await request.json();
         await env.DB.prepare('UPDATE mentorship_applications SET mentor_id = ?, proposed_price = ?, start_date = ?, review_notes = ?, status = ? WHERE id = ?').bind(mentorId, price, firstSessionDate ? new Date(firstSessionDate).getTime() : null, notes, 'proposal_sent', appId).run();
         return json({ success: true });
@@ -393,7 +397,7 @@ export default {
 
       if (path.match(/\/api\/mentorship\/application\/[^/]+\/agree/) && method === 'PUT') {
         const token = getToken();
-        const appId = path.split('/')[3];
+        const appId = parts[3]; // ✅ FIX
         const app = await env.DB.prepare('SELECT * FROM mentorship_applications WHERE id = ? AND user_id = ?').bind(appId, token).first();
         if (!app) return error('Application not found', 404);
         await env.DB.prepare('UPDATE mentorship_applications SET agreed_price = ?, status = ?, agreed_at = ? WHERE id = ?').bind(app.proposed_price, 'agreed', Date.now(), appId).run();
@@ -436,7 +440,7 @@ export default {
       if (path.match(/\/api\/meetups\/[^/]+\/rsvp/) && method === 'POST') {
         const token = getToken();
         if (!token) return error('Unauthorized', 401);
-        const meetupId = path.split('/')[2];
+        const meetupId = parts[2]; // ✅ FIX
         const { status } = await request.json();
         await env.DB.prepare('INSERT INTO meetup_attendees (meetup_id, user_id, status, rsvp_at) VALUES (?, ?, ?, ?) ON CONFLICT(meetup_id, user_id) DO UPDATE SET status = ?, rsvp_at = ?').bind(meetupId, token, status, Date.now(), status, Date.now()).run();
         return json({ success: true });
@@ -512,7 +516,7 @@ export default {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        const instId = path.split('/')[3];
+        const instId = parts[3]; // ✅ FIX
         await env.DB.prepare('DELETE FROM instructors WHERE id = ?').bind(instId).run();
         await env.DB.prepare('DELETE FROM course_instructors WHERE instructor_id = ?').bind(instId).run();
         await logAudit(env, token, 'INSTRUCTOR_DELETED', `Deleted instructor ID: ${instId}`);
@@ -542,7 +546,7 @@ export default {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        const courseId = path.split('/')[3];
+        const courseId = parts[3]; // ✅ FIX
         const data = await request.json();
         const fields = []; const values = [];
         for (const [key, val] of Object.entries(data)) {
@@ -558,7 +562,7 @@ export default {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        const courseId = path.split('/')[3];
+        const courseId = parts[3]; // ✅ FIX
         const { title, orderIndex } = await request.json();
         const result = await env.DB.prepare('INSERT INTO modules (course_id, title, order_index) VALUES (?, ?, ?)').bind(courseId, title, orderIndex || 99).run();
         await logAudit(env, token, 'MODULE_CREATED', `Created module in course ID: ${courseId}`);
@@ -569,7 +573,7 @@ export default {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        const courseId = path.split('/')[3];
+        const courseId = parts[3]; // ✅ FIX
         const { id, moduleId, title, minutes, tags, bullets, msg, youtubeUrl, orderIndex } = await request.json();
         const lessonId = id || 'les_' + uid();
         await env.DB.prepare(`INSERT INTO lessons (id, module_id, course_id, title, minutes, tags, bullets, msg, youtube_url, order_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(lessonId, moduleId, courseId, title, minutes, JSON.stringify(tags || []), JSON.stringify(bullets || []), msg || 0, youtubeUrl || null, orderIndex || 99).run();
@@ -581,7 +585,7 @@ export default {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        const lessonId = path.split('/')[3];
+        const lessonId = parts[3]; // ✅ FIX
         const data = await request.json();
         const fields = []; const values = [];
         for (const [key, val] of Object.entries(data)) {
@@ -594,13 +598,13 @@ export default {
       }
 
       // ============================================
-      // FIXED: LESSON DELETION WITH CASCADE
+      // LESSON DELETION WITH CASCADE
       // ============================================
       if (path.startsWith('/api/admin/lessons/') && method === 'DELETE') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        const lessonId = path.split('/')[3];
+        const lessonId = parts[3]; // ✅ FIX
         
         // Delete resources tied to this lesson first
         await env.DB.prepare('DELETE FROM resources WHERE lesson_id = ?').bind(lessonId).run();
@@ -615,7 +619,7 @@ export default {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        const courseId = path.split('/')[3];
+        const courseId = parts[3]; // ✅ FIX
         const { question, options, answer, orderIndex } = await request.json();
         await env.DB.prepare('INSERT INTO quiz_questions (course_id, question, options, answer, order_index) VALUES (?, ?, ?, ?, ?)').bind(courseId, question, JSON.stringify(options), answer, orderIndex || 99).run();
         await logAudit(env, token, 'QUIZ_QUESTION_CREATED', `Added quiz question to course ID: ${courseId}`);
@@ -637,7 +641,7 @@ export default {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        const resourceId = path.split('/')[3];
+        const resourceId = parts[3]; // ✅ FIX
         const data = await request.json();
         const fields = []; const values = [];
         for (const [key, val] of Object.entries(data)) {
@@ -653,16 +657,15 @@ export default {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        const resourceId = path.split('/')[3];
+        const resourceId = parts[3]; // ✅ FIX
         await env.DB.prepare('DELETE FROM resources WHERE id = ?').bind(resourceId).run();
         await logAudit(env, token, 'RESOURCE_DELETED', `Deleted resource ID: ${resourceId}`);
         return json({ success: true });
       }
 
       if (path.match(/\/api\/courses\/[^/]+\/lessons\/[^/]+\/resources/) && method === 'GET') {
-        const parts = path.split('/');
-        const courseId = parts[2];
-        const lessonId = parts[4];
+        const courseId = parts[2]; // ✅ FIX
+        const lessonId = parts[4]; // ✅ FIX
         const token = getToken();
         const isEnrolled = token ? await env.DB.prepare('SELECT 1 FROM enrollments WHERE user_id = ? AND course_id = ?').bind(token, courseId).first() : null;
         const resources = await env.DB.prepare('SELECT * FROM resources WHERE lesson_id = ? ORDER BY order_index ASC').bind(lessonId).all();
@@ -700,7 +703,7 @@ export default {
       // SECURE RESOURCE STREAMING
       // ============================================
       if (path.startsWith('/api/resources/stream/') && method === 'GET') {
-        const resourceId = path.split('/').pop();
+        const resourceId = parts[3]; // ✅ FIX
         const token = getToken();
         const resource = await env.DB.prepare('SELECT * FROM resources WHERE id = ?').bind(resourceId).first();
         if (!resource) return error('Resource not found', 404);
@@ -731,20 +734,20 @@ export default {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        const mentorId = path.split('/')[3];
+        const mentorId = parts[3]; // ✅ FIX
         await env.DB.prepare('DELETE FROM mentors WHERE id = ?').bind(mentorId).run();
         await logAudit(env, token, 'MENTOR_DELETED', `Deleted mentor ID: ${mentorId}`);
         return json({ success: true });
       }
 
       // ============================================
-      // FIXED: COURSE DELETION WITH CASCADE
+      // COURSE DELETION WITH CASCADE
       // ============================================
       if (path.startsWith('/api/admin/courses/') && method === 'DELETE' && !path.includes('/modules') && !path.includes('/lessons') && !path.includes('/quiz')) {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        const courseId = path.split('/')[3];
+        const courseId = parts[3]; // ✅ FIX
         
         // 1. Wipe lesson_completions + resources tied to this course's lessons (the missing FK fix)
         const lessonRows = await env.DB.prepare('SELECT id FROM lessons WHERE course_id = ?').bind(courseId).all();
@@ -778,13 +781,13 @@ export default {
       }
 
       // ============================================
-      // FIXED: USER DELETION WITH CASCADE
+      // USER DELETION WITH CASCADE
       // ============================================
       if (path.startsWith('/api/admin/users/') && method === 'DELETE') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        const userId = path.split('/')[3];
+        const userId = parts[3]; // ✅ FIX
         if (userId === token) return error('Cannot delete yourself', 400);
         
         // Mentor-owned rows (if this user was a mentor)
