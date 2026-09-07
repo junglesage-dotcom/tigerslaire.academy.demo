@@ -51,8 +51,8 @@ interface StoreCtx {
   setAuthOpen: (v: boolean) => void;
   toasts: Toast[];
   toast: (text: string) => void;
-  register: (name: string, email: string) => Promise<void>;
-  login: (email: string) => Promise<void>;
+  register: (name: string, email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   loginDemo: () => Promise<void>;
   logout: () => void;
   enroll: (courseId: string) => Promise<void>;
@@ -105,9 +105,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     window.scrollTo(0, 0);
   }, []);
 
-  const register = useCallback(async (name: string, email: string) => {
+  const register = useCallback(async (name: string, email: string, password: string) => {
     try {
-      const res = await api.register(name, email);
+      const res = await api.register(name, email, password);
       setUser(res.data);
       toast("Welcome to the Lair, " + name.split(" ")[0]);
       setAuthOpen(false);
@@ -116,9 +116,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [toast]);
 
-  const login = useCallback(async (email: string) => {
+  const login = useCallback(async (email: string, password: string) => {
     try {
-      const res = await api.login(email);
+      const res = await api.login(email, password);
       setUser(res.data);
       toast("Signed in as " + res.data.name.split(" ")[0]);
       setAuthOpen(false);
@@ -189,7 +189,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [toast]);
 
-  // UPDATED: Handles both Mini App (initData) and Web fallback
   const linkTelegram = useCallback(async (initData?: string) => {
     try {
       let res;
@@ -197,7 +196,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         res = await api.linkTelegramMiniApp(initData);
         toast("Telegram linked securely via Mini App!");
       } else {
-        // Fallback for web (generates a random ID for now)
         const tgId = '78' + String(Math.floor(1000000 + Math.random() * 8999999));
         res = await api.linkTelegram();
         toast("Telegram linked!");

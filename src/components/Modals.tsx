@@ -13,6 +13,7 @@ function Overlay({ children, onClose, label }: { children: ReactNode; onClose: (
       document.body.style.overflow = "";
     };
   }, [onClose]);
+  
   return (
     <div
       className="fixed inset-0 z-[90] flex items-center justify-center overflow-y-auto bg-ink/85 p-4 backdrop-blur-sm"
@@ -40,18 +41,43 @@ export function AuthModal() {
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const submit = (e: FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (mode === "signup" && name.trim().length < 2) return setErr("Tell us your name — at least 2 characters.");
-    if (!/^\S+@\S+\.\S+$/.test(email)) return setErr("That email doesn't look right.");
-    if (pw.length < 6) return setErr("Password needs at least 6 characters.");
+    
+    if (mode === "signup" && name.trim().length < 2) {
+      return setErr("Tell us your name — at least 2 characters.");
+    }
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
+      return setErr("That email doesn't look right.");
+    }
+    if (pw.length < 6) {
+      return setErr("Password needs at least 6 characters.");
+    }
+    
     setErr("");
+    setLoading(true);
+
     const displayName =
-      mode === "signup" ? name.trim() : email.split("@")[0].replace(/[._-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-    if (mode === "signup") register(displayName, email);
-    else login(displayName, email);
-    setAuthOpen(false);
+      mode === "signup"
+        ? name.trim()
+        : email.split("@")[0].replace(/[._-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+    try {
+      if (mode === "signup") {
+        // Correctly passing name, email, and password
+        await register(displayName, email, pw);
+      } else {
+        // Correctly passing email and password
+        await login(email, pw);
+      }
+      setAuthOpen(false);
+    } catch (e: any) {
+      setErr(e.message || "Authentication failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -79,7 +105,9 @@ export function AuthModal() {
                 setMode(m);
                 setErr("");
               }}
-              className={`rounded px-3 py-2 transition-colors ${mode === m ? "bg-amber font-bold text-ink" : "text-smoke hover:text-bone"}`}
+              className={`rounded px-3 py-2 transition-colors ${
+                mode === m ? "bg-amber font-bold text-ink" : "text-smoke hover:text-bone"
+              }`}
             >
               {m === "signup" ? "Create account" : "Sign in"}
             </button>
@@ -90,23 +118,46 @@ export function AuthModal() {
           {mode === "signup" && (
             <div>
               <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-[0.18em] text-smoke">Full name</label>
-              <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="Ada Eze" />
+              <input 
+                className={inputCls} 
+                value={name} 
+                onChange={(e) => setName(e.target.value)} 
+                placeholder="Ada Eze" 
+              />
             </div>
           )}
           <div>
             <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-[0.18em] text-smoke">Email</label>
-            <input className={inputCls} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+            <input 
+              className={inputCls} 
+              value={email} 
+              onChange={(e) => setEmail(e.target.value)} 
+              placeholder="you@example.com" 
+            />
           </div>
           <div>
             <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-[0.18em] text-smoke">Password</label>
-            <input type="password" className={inputCls} value={pw} onChange={(e) => setPw(e.target.value)} placeholder="••••••••" />
+            <input 
+              type="password" 
+              className={inputCls} 
+              value={pw} 
+              onChange={(e) => setPw(e.target.value)} 
+              placeholder="••••••••" 
+            />
           </div>
-          {err && <p className="rounded border border-alert/40 bg-alert/10 px-3 py-2 text-xs text-alert">{err}</p>}
+          
+          {err && (
+            <p className="rounded border border-alert/40 bg-alert/10 px-3 py-2 text-xs text-alert">
+              {err}
+            </p>
+          )}
+          
           <button
             type="submit"
-            className="stripe-btn w-full rounded-md bg-amber px-4 py-3 font-display text-sm font-extrabold uppercase tracking-[0.1em] text-ink transition-transform hover:-translate-y-0.5"
+            disabled={loading}
+            className="stripe-btn w-full rounded-md bg-amber px-4 py-3 font-display text-sm font-extrabold uppercase tracking-[0.1em] text-ink transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0"
           >
-            {mode === "signup" ? "Create my student record" : "Sign in"}
+            {loading ? "Please wait..." : mode === "signup" ? "Create my student record" : "Sign in"}
           </button>
         </form>
 
@@ -115,6 +166,7 @@ export function AuthModal() {
           <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-smoke">or</span>
           <span className="h-px flex-1 bg-bone/10" />
         </div>
+        
         <button
           onClick={() => {
             loginDemo();
@@ -124,6 +176,7 @@ export function AuthModal() {
         >
           Explore as <span className="font-bold">Ada</span> — demo student with progress
         </button>
+        
         <p className="mt-4 text-center font-mono text-[10px] leading-relaxed tracking-[0.06em] text-smoke/70">
           Demo mode — your student record lives in this browser only.
         </p>
@@ -170,12 +223,12 @@ export function TelegramModal() {
           </button>
         </div>
 
-        {user?.telegramId ? (
+        {user?.telegram_id ? (
           <div className="mt-6">
             <div className="flex items-center gap-3 rounded-md border border-mint/30 bg-mint/10 px-4 py-3">
               <IconCheck className="h-5 w-5 text-mint" />
               <div>
-                <p className="text-sm font-bold text-bone">Linked · telegram_id {user.telegramId}</p>
+                <p className="text-sm font-bold text-bone">Linked · telegram_id {user.telegram_id}</p>
                 <p className="text-xs text-smoke">Lesson drops and reminders now arrive in your chat.</p>
               </div>
             </div>
@@ -232,7 +285,7 @@ export function TelegramModal() {
                   generates a one-time linking code tied to your student record.
                 </p>
                 <a
-                  href="https://t.me/BotFather"
+                  href="https://t.me/TigersLair_bot"
                   target="_blank"
                   rel="noreferrer"
                   className="card-lift mt-4 flex items-center gap-4 rounded-md border border-tgsky/30 bg-tgsky/10 px-4 py-3.5"
@@ -241,7 +294,7 @@ export function TelegramModal() {
                     <IconPlane className="h-5 w-5" />
                   </span>
                   <span>
-                    <span className="block text-sm font-bold text-bone">@TigersLairBot</span>
+                    <span className="block text-sm font-bold text-bone">@TigersLair_bot</span>
                     <span className="block font-mono text-[10px] uppercase tracking-[0.14em] text-tgsky">t.me · opens Telegram</span>
                   </span>
                 </a>
@@ -273,7 +326,10 @@ export function TelegramModal() {
                   </button>
                 </div>
                 <div className="mt-4 flex gap-3">
-                  <button onClick={() => setStep(1)} className="rounded-md border border-bone/15 px-4 py-3 text-sm text-smoke transition-colors hover:text-bone">
+                  <button 
+                    onClick={() => setStep(1)} 
+                    className="rounded-md border border-bone/15 px-4 py-3 text-sm text-smoke transition-colors hover:text-bone"
+                  >
                     Back
                   </button>
                   <button
@@ -302,10 +358,17 @@ export function TelegramModal() {
                 <p className="mt-2 font-mono text-[10px] text-smoke/60">hint for the demo: the code is {expected}</p>
                 {err && <p className="mt-3 rounded border border-alert/40 bg-alert/10 px-3 py-2 text-xs text-alert">{err}</p>}
                 <div className="mt-4 flex gap-3">
-                  <button type="button" onClick={() => setStep(2)} className="rounded-md border border-bone/15 px-4 py-3 text-sm text-smoke transition-colors hover:text-bone">
+                  <button 
+                    type="button" 
+                    onClick={() => setStep(2)} 
+                    className="rounded-md border border-bone/15 px-4 py-3 text-sm text-smoke transition-colors hover:text-bone"
+                  >
                     Back
                   </button>
-                  <button type="submit" className="stripe-btn flex-1 rounded-md bg-tgsky px-4 py-3 font-display text-sm font-extrabold uppercase tracking-[0.1em] text-ink">
+                  <button 
+                    type="submit" 
+                    className="stripe-btn flex-1 rounded-md bg-tgsky px-4 py-3 font-display text-sm font-extrabold uppercase tracking-[0.1em] text-ink"
+                  >
                     Verify & link
                   </button>
                 </div>
@@ -313,7 +376,6 @@ export function TelegramModal() {
             )}
           </>
         )}
-
       </div>
     </Overlay>
   );
@@ -322,9 +384,16 @@ export function TelegramModal() {
 /* ================= CONFIRM ================= */
 
 export function ConfirmModal() {
-  const { confirmState, closeConfirm } = useStore();
+  // Note: Ensure your store actually exports `confirmState` and `closeConfirm` 
+  // if you are using this modal. If not, you can safely remove this component.
+  const store = useStore() as any; 
+  const confirmState = store.confirmState;
+  const closeConfirm = store.closeConfirm;
+
   if (!confirmState) return null;
+  
   const { title, message, confirmLabel, onConfirm } = confirmState;
+  
   return (
     <Overlay onClose={closeConfirm} label={title}>
       <div className="rounded-lg border border-bone/15 bg-ink p-6 shadow-[0_40px_100px_-20px_rgba(0,0,0,0.9)] sm:p-8">
