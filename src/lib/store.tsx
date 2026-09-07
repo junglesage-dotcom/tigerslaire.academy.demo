@@ -91,7 +91,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     try {
       const res = await api.getEnrollments();
       setEnrollments(res.data);
-    } catch (e) { /* ignore */ }
+    } catch (e) { 
+      // Silently ignore enrollment fetch errors on initial load
+    }
   };
 
   const toast = useCallback((text: string) => {
