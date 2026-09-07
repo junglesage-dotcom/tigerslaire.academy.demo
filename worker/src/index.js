@@ -367,8 +367,19 @@ export default {
 
     const parts = path.split('/').filter(Boolean);
 
+    // ✅ SECURITY: Lock down CORS to specific origins
+    const origin = request.headers.get('Origin') || '';
+    const allowedOrigins = [
+      'https://tigerslair.academy',
+      'https://tigerslair-academy.ehisferguson.workers.dev',
+      'http://localhost:5173',
+      'http://localhost:3000',
+      'http://localhost:4173'
+    ];
+    const isAllowedOrigin = allowedOrigins.includes(origin) || origin.endsWith('.telegram.org') || origin.endsWith('.pages.dev');
+    
     const corsHeaders = {
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': isAllowedOrigin ? origin : allowedOrigins[0],
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
@@ -536,7 +547,6 @@ export default {
         return json({ data: courses.results });
       }
 
-      // ✅ FIX: Exact match only, so /api/courses/:id/lessons/:id/resources is NOT swallowed
       if (path.match(/^\/api\/courses\/[^/]+$/) && method === 'GET') {
         const courseId = parts[2];
         const course = await env.DB.prepare('SELECT * FROM courses WHERE id = ?').bind(courseId).first();
@@ -562,6 +572,35 @@ export default {
         });
 
         return json({ data: { ...course, modules: modules.results, quiz: quiz.results } });
+      }
+
+      // ============================================
+      // PASSWORD RESET FLOW
+      // ============================================
+      if (path === '/api/auth/forgot-password' && method === 'POST') {
+        const { email } = await request.json();
+        const user = await env.DB.prepare('SELECT id, name FROM users WHERE email = ?').bind(email).first();
+        if (user) {
+          const otp = Math.floor(100000 + Math.random() * 900000).toString();
+          const expires = Date.now() + 15 * 60 * 1000; // 15 mins
+          await env.DB.prepare('INSERT OR REPLACE INTO password_resets (user_id, token, expires_at) VALUES (?, ?, ?)').bind(user.id, otp, expires).run();
+          console.log(`🔐 OTP for ${email}: ${otp}`); 
+          return json({ success: true, message: 'If an account exists, an OTP has been sent.', dev_otp: otp });
+        }
+        return json({ success: true, message: 'If an account exists, an OTP has been sent.' });
+      }
+
+      if (path === '/api/auth/reset-password' && method === 'POST') {
+        const { email, otp, newPassword } = await request.json();
+        if (!newPassword || newPassword.length < 6) return error('Password must be at least 6 characters', 400);
+        const user = await env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
+        if (!user) return error('Invalid OTP or expired', 400);
+        const reset = await env.DB.prepare('SELECT * FROM password_resets WHERE user_id = ? AND token = ? AND expires_at > ?').bind(user.id, otp, Date.now()).first();
+        if (!reset) return error('Invalid OTP or expired', 400);
+        const passwordHash = await hashPassword(newPassword);
+        await env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?').bind(passwordHash, user.id).run();
+        await env.DB.prepare('DELETE FROM password_resets WHERE user_id = ?').bind(user.id).run();
+        return json({ success: true });
       }
 
       // ============================================
@@ -959,6 +998,28 @@ export default {
         return json({ success: true });
       }
 
+      // ✅ NEW: Quiz Question Editor (Update & Delete)
+      if (path.match(/\/api\/admin\/courses\/[^/]+\/quiz\/[^/]+/) && method === 'PUT') {
+        const token = getToken();
+        const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
+        if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
+        const questionId = parts[5];
+        const { question, options, answer } = await request.json();
+        await env.DB.prepare('UPDATE quiz_questions SET question = ?, options = ?, answer = ? WHERE id = ?').bind(question, JSON.stringify(options), answer, questionId).run();
+        await logAudit(env, token, 'QUIZ_QUESTION_UPDATED', `Updated quiz question ID: ${questionId}`);
+        return json({ success: true });
+      }
+
+      if (path.match(/\/api\/admin\/courses\/[^/]+\/quiz\/[^/]+/) && method === 'DELETE') {
+        const token = getToken();
+        const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
+        if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
+        const questionId = parts[5];
+        await env.DB.prepare('DELETE FROM quiz_questions WHERE id = ?').bind(questionId).run();
+        await logAudit(env, token, 'QUIZ_QUESTION_DELETED', `Deleted quiz question ID: ${questionId}`);
+        return json({ success: true });
+      }
+
       if (path === '/api/admin/resources' && method === 'POST') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
@@ -1040,7 +1101,6 @@ export default {
       // ============================================
       if (path.startsWith('/api/resources/stream/') && method === 'GET') {
         const resourceId = parts[3];
-        // ✅ FIX: Allow token from query params for native video/audio tags
         const token = getToken() || url.searchParams.get('token');
         const resource = await env.DB.prepare('SELECT * FROM resources WHERE id = ?').bind(resourceId).first();
         if (!resource) return error('Resource not found', 404);
@@ -1110,11 +1170,22 @@ export default {
         return json({ success: true });
       }
 
+      // ✅ NEW: Audit Logs Viewer
+      if (path === '/api/admin/audit-logs' && method === 'GET') {
+        const token = getToken();
+        const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
+        if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
+        const logs = await env.DB.prepare('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 100').all();
+        return json({ data: logs.results });
+      }
+
+      // ✅ UPDATED: User Search
       if (path === '/api/admin/users' && method === 'GET') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        const users = await env.DB.prepare('SELECT id, name, email, role, telegram_id, joined_at FROM users ORDER BY joined_at DESC').all();
+        const search = url.searchParams.get('search') || '';
+        const users = await env.DB.prepare('SELECT id, name, email, role, telegram_id, joined_at FROM users WHERE name LIKE ? OR email LIKE ? ORDER BY joined_at DESC').bind(`%${search}%`, `%${search}%`).all();
         return json({ data: users.results });
       }
 

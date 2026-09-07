@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { api } from "../lib/api";
 import { sanitizeObject } from "../lib/sanitize";
 import { useStore } from "../lib/store";
@@ -7,7 +7,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 export default function AdminPanel() {
   const { user, go, toast } = useStore();
   
-  const [activeTab, setActiveTab] = useState<'analytics' | 'progress' | 'applications' | 'payments' | 'installments' | 'mentors' | 'instructors' | 'courses' | 'users'>('analytics');
+  const [activeTab, setActiveTab] = useState<'analytics' | 'progress' | 'applications' | 'payments' | 'installments' | 'mentors' | 'instructors' | 'courses' | 'users' | 'audit'>('analytics');
   
   const [apps, setApps] = useState<any[]>([]);
   const [payments, setPayments] = useState<any[]>([]);
@@ -17,7 +17,11 @@ export default function AdminPanel() {
   const [courses, setCourses] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [progress, setProgress] = useState<any[]>([]);
-  
+  const [auditLogs, setAuditLogs] = useState<any[]>([]); // ✅ NEW
+
+  const [userSearch, setUserSearch] = useState(""); // ✅ NEW
+  const [courseSearch, setCourseSearch] = useState(""); // ✅ NEW
+
   const [analytics, setAnalytics] = useState<any>({ 
     totalRevenue: 0, 
     totalStudents: 0, 
@@ -54,7 +58,7 @@ export default function AdminPanel() {
 
   const loadAll = async () => {
     try {
-      const [analyticsRes, appsRes, payRes, adminInstallmentsRes, mentorsRes, instructorsRes, coursesRes, usersRes, progressRes] = await Promise.all([
+      const [analyticsRes, appsRes, payRes, adminInstallmentsRes, mentorsRes, instructorsRes, coursesRes, usersRes, progressRes, auditRes] = await Promise.all([
         api.getAnalytics(),
         api.getAllApplications(),
         api.getPendingPayments(),
@@ -63,7 +67,8 @@ export default function AdminPanel() {
         api.getInstructors(),
         api.getCourses(),
         api.getUsers(),
-        api.getStudentProgress()
+        api.getStudentProgress(),
+        api.getAuditLogs() // ✅ NEW
       ]);
       
       setAnalytics(analyticsRes.data);
@@ -75,10 +80,30 @@ export default function AdminPanel() {
       setCourses(coursesRes.data);
       setUsers(usersRes.data);
       setProgress(progressRes.data);
+      setAuditLogs(auditRes.data); // ✅ NEW
     } catch (e) {
       toast("Failed to load admin data");
     }
   };
+
+  // ✅ NEW: Memoized search filters
+  const filteredUsers = useMemo(() => {
+    if (!userSearch) return users;
+    const term = userSearch.toLowerCase();
+    return users.filter(u => 
+      u.name.toLowerCase().includes(term) || 
+      u.email.toLowerCase().includes(term)
+    );
+  }, [users, userSearch]);
+
+  const filteredCourses = useMemo(() => {
+    if (!courseSearch) return courses;
+    const term = courseSearch.toLowerCase();
+    return courses.filter(c =>
+      c.code.toLowerCase().includes(term) ||
+      c.title.toLowerCase().includes(term)
+    );
+  }, [courses, courseSearch]);
 
   const handlePropose = async (appId: string, price: number) => {
     try {
@@ -194,7 +219,7 @@ export default function AdminPanel() {
         try {
           await api.deleteCourse(id);
           toast("Course and all associated data deleted");
-          await new Promise(r => setTimeout(r, 500)); // Delay to allow backend cascade delete to finish
+          await new Promise(r => setTimeout(r, 500)); 
           loadAll();
         } catch (e: any) {
           toast(e.message);
@@ -217,7 +242,7 @@ export default function AdminPanel() {
         try {
           await api.deleteUser(id);
           toast("User account and associated data deleted");
-          await new Promise(r => setTimeout(r, 500)); // Delay to allow backend cascade delete to finish
+          await new Promise(r => setTimeout(r, 500)); 
           loadAll();
         } catch (e: any) {
           toast(e.message);
@@ -239,6 +264,7 @@ export default function AdminPanel() {
     { id: 'instructors', label: 'Instructors', count: instructors.length },
     { id: 'courses', label: 'Courses', count: courses.length },
     { id: 'users', label: 'Users', count: users.length },
+    { id: 'audit', label: 'Audit Logs', icon: '🛡️' }, // ✅ NEW
   ] as const;
 
   return (
@@ -255,7 +281,7 @@ export default function AdminPanel() {
             }`}
           >
             {t.icon && <span>{t.icon}</span>}
-            {t.label} {t.count > 0 && <span className="ml-1 rounded bg-amber/20 px-1.5 py-0.5 text-[10px] text-amber">{t.count}</span>}
+            {t.label} {t.count !== undefined && t.count > 0 && <span className="ml-1 rounded bg-amber/20 px-1.5 py-0.5 text-[10px] text-amber">{t.count}</span>}
           </button>
         ))}
       </div>
@@ -516,7 +542,6 @@ export default function AdminPanel() {
                 <input placeholder="Telegram Channel" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newCourse.channel} onChange={e => setNewCourse({...newCourse, channel: e.target.value})} />
               </div>
               
-              {/* PRICING FIELDS HIGHLIGHTED */}
               <div className="grid grid-cols-2 gap-3 p-3 rounded-lg border border-amber/30 bg-amber/5">
                 <div>
                   <label className="text-[10px] font-bold uppercase text-amber block mb-1">Price (₦ NGN)</label>
@@ -535,9 +560,21 @@ export default function AdminPanel() {
             </form>
           </div>
           <div className="rounded-lg border border-bone/10 bg-coal p-6">
-            <h2 className="font-display text-xl font-bold text-amber mb-4">Existing Courses</h2>
+            {/* ✅ NEW: Course Search */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+              <h2 className="font-display text-xl font-bold text-amber">Existing Courses</h2>
+              <input 
+                type="text" 
+                placeholder="Search courses..." 
+                className="w-full sm:w-64 rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
+                value={courseSearch}
+                onChange={e => setCourseSearch(e.target.value)}
+              />
+            </div>
             <div className="space-y-3">
-              {courses.map(c => (
+              {filteredCourses.length === 0 ? (
+                <p className="text-sm text-smoke text-center py-4">No courses found.</p>
+              ) : filteredCourses.map(c => (
                 <div key={c.id} className="rounded border border-bone/5 bg-ink p-3 flex justify-between items-center">
                   <div className="min-w-0 flex-1">
                     <p className="font-bold text-bone truncate">{c.code} - {c.title}</p>
@@ -549,7 +586,6 @@ export default function AdminPanel() {
                   </div>
                 </div>
               ))}
-              {courses.length === 0 && <p className="text-sm text-smoke text-center py-4">No courses created yet.</p>}
             </div>
           </div>
         </div>
@@ -557,7 +593,17 @@ export default function AdminPanel() {
 
       {activeTab === 'users' && (
         <div className="rounded-lg border border-bone/10 bg-coal p-6">
-          <h2 className="font-display text-xl font-bold text-amber mb-4">Registered Users ({users.length})</h2>
+          {/* ✅ NEW: User Search */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+            <h2 className="font-display text-xl font-bold text-amber">Registered Users ({users.length})</h2>
+            <input 
+              type="text" 
+              placeholder="Search by name or email..." 
+              className="w-full sm:w-64 rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
+              value={userSearch}
+              onChange={e => setUserSearch(e.target.value)}
+            />
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead className="text-xs text-smoke uppercase border-b border-bone/10">
@@ -570,7 +616,9 @@ export default function AdminPanel() {
                 </tr>
               </thead>
               <tbody>
-                {users.map(u => (
+                {filteredUsers.length === 0 ? (
+                  <tr><td colSpan={5} className="text-sm text-smoke text-center py-8">No users found.</td></tr>
+                ) : filteredUsers.map(u => (
                   <tr key={u.id} className="border-b border-bone/5 hover:bg-ink/50 transition-colors">
                     <td className="py-3 px-2 font-bold text-bone">{u.name}</td>
                     <td className="py-3 px-2 text-smoke">{u.email}</td>
@@ -581,7 +629,34 @@ export default function AdminPanel() {
                 ))}
               </tbody>
             </table>
-            {users.length === 0 && <p className="text-sm text-smoke text-center py-8">No users found.</p>}
+          </div>
+        </div>
+      )}
+
+      {/* ✅ NEW: Audit Logs Tab */}
+      {activeTab === 'audit' && (
+        <div className="rounded-lg border border-bone/10 bg-coal p-6">
+          <h2 className="font-display text-xl font-bold text-amber mb-2">System Audit Logs</h2>
+          <p className="text-xs text-smoke mb-6">A secure record of all administrative actions and system events.</p>
+          <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2">
+            {auditLogs.length === 0 ? (
+              <p className="text-sm text-smoke text-center py-8">No audit logs recorded yet.</p>
+            ) : (
+              auditLogs.map((log) => (
+                <div key={log.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg border border-bone/5 bg-ink p-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <span className="rounded bg-amber/20 px-2 py-0.5 text-[10px] font-bold uppercase text-amber">{log.action.replace(/_/g, ' ')}</span>
+                      <span className="text-xs text-smoke truncate">by {log.admin_id}</span>
+                    </div>
+                    <p className="text-sm text-bone break-words">{log.details}</p>
+                  </div>
+                  <span className="text-xs text-smoke whitespace-nowrap sm:text-right">
+                    {new Date(log.created_at).toLocaleString()}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}

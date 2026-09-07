@@ -50,6 +50,16 @@ export const api = {
       method: 'POST', body: JSON.stringify({ name, email })
     }).then(res => { setToken(res.token); return res; }),
 
+  // ✅ NEW: Password Reset Flow
+  forgotPassword: (email: string) =>
+    request<{ success: boolean; message: string; dev_otp?: string }>('/api/auth/forgot-password', {
+      method: 'POST', body: JSON.stringify({ email })
+    }),
+  resetPassword: (email: string, otp: string, newPassword: string) =>
+    request<{ success: boolean }>('/api/auth/reset-password', {
+      method: 'POST', body: JSON.stringify({ email, otp, newPassword })
+    }),
+
   getMe: () => request<{ data: any }>('/api/user/me'),
 
   enroll: (courseId: string) =>
@@ -79,7 +89,6 @@ export const api = {
   unlinkTelegram: () => request<{ success: boolean }>('/api/telegram/unlink', { method: 'POST' }),
   getCommunity: () => request<{ data: any }>('/api/telegram/community'),
 
-  // ✅ NEW: Trigger Telegram Bot Webhook & Commands Setup
   setupTelegramBot: () =>
     request<{ setWebhook: any; setCommands: any; setMenu: any }>('/api/telegram/setup-webhook', {
       method: 'POST'
@@ -140,7 +149,9 @@ export const api = {
       method: 'PUT', body: JSON.stringify({ price, mentorId, firstSessionDate, notes })
     }),
 
-  getUsers: () => request<{ data: any[] }>('/api/admin/users'),
+  // ✅ UPDATED: User Search
+  getUsers: (search?: string) => 
+    request<{ data: any[] }>(`/api/admin/users${search ? `?search=${encodeURIComponent(search)}` : ''}`),
   deleteUser: (id: string) =>
     request<{ success: boolean }>(`/api/admin/users/${id}`, { method: 'DELETE' }),
 
@@ -168,10 +179,18 @@ export const api = {
     }),
   deleteLesson: (lessonId: string) =>
     request<{ success: boolean }>(`/api/admin/lessons/${lessonId}`, { method: 'DELETE' }),
+  
   addQuizQuestion: (courseId: string, data: any) =>
     request<{ success: boolean }>(`/api/admin/courses/${courseId}/quiz`, {
       method: 'POST', body: JSON.stringify(data)
     }),
+  // ✅ NEW: Quiz Question Editor
+  updateQuizQuestion: (courseId: string, questionId: string, data: any) =>
+    request<{ success: boolean }>(`/api/admin/courses/${courseId}/quiz/${questionId}`, {
+      method: 'PUT', body: JSON.stringify(data)
+    }),
+  deleteQuizQuestion: (courseId: string, questionId: string) =>
+    request<{ success: boolean }>(`/api/admin/courses/${courseId}/quiz/${questionId}`, { method: 'DELETE' }),
 
   getResources: (courseId: string, lessonId: string) =>
     request<{ data: any[] }>(`/api/courses/${courseId}/lessons/${lessonId}/resources`),
@@ -193,11 +212,9 @@ export const api = {
     return data;
   },
 
-  // Fetches JSON metadata/embed URLs for external resources
   getResourceStreamData: (resourceId: string) =>
     request<{ data: any }>(`/api/resources/stream/${resourceId}`),
 
-  // ✅ NEW: Generates a secure, token-authenticated URL for native <video> and <audio> tags
   getResourceStreamUrl: (resourceId: string) => {
     const token = getToken();
     return `${API_BASE}/api/resources/stream/${resourceId}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
@@ -242,7 +259,9 @@ export const api = {
       method: 'POST', body: JSON.stringify({ installmentId, adminToken: getToken() })
     }),
 
-  // Admin Analytics & Progress
   getAnalytics: () => request<{ data: any }>('/api/admin/analytics'),
   getStudentProgress: () => request<{ data: any[] }>('/api/admin/student-progress'),
+  
+  // ✅ NEW: Audit Logs
+  getAuditLogs: () => request<{ data: any[] }>('/api/admin/audit-logs'),
 };

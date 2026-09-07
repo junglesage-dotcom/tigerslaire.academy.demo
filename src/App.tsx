@@ -11,10 +11,14 @@ import CounselingBook from "./views/CounselingBook";
 import Meetups from "./views/Meetups";
 import AdminPanel from "./views/AdminPanel";
 import CourseEditor from "./views/CourseEditor";
+import LegalPage from "./views/LegalPage"; // ✅ NEW: Dedicated Legal Pages
 import { AuthModal } from "./components/Modals";
 import { IconClaw, IconMenu, IconX, IconPlane } from "./components/Icons";
 import CookieConsent from "./components/CookieConsent";
 
+// ============================================
+// STATUS STRIP
+// ============================================
 function StatusStrip() {
   const [secs, setSecs] = useState(86414);
   useEffect(() => {
@@ -37,6 +41,9 @@ function StatusStrip() {
   );
 }
 
+// ============================================
+// NAVIGATION
+// ============================================
 function Nav() {
   const { route, go, user, setAuthOpen, logout } = useStore();
   const [open, setOpen] = useState(false);
@@ -152,8 +159,12 @@ function Nav() {
   );
 }
 
+// ============================================
+// FOOTER (WITH LEGAL PAGE ROUTING)
+// ============================================
 function Footer() {
   const { go } = useStore();
+
   return (
     <footer className="border-t border-bone/10 bg-[#120c05]">
       <div className="mx-auto grid max-w-7xl gap-12 px-5 py-16 sm:px-8 lg:grid-cols-12">
@@ -211,14 +222,18 @@ function Footer() {
           <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-amber mb-4">Legal & Compliance</p>
           <ul className="space-y-2.5 text-sm">
             {[
-              { l: "Privacy Policy", f: () => {} },
-              { l: "Terms of Service", f: () => {} },
-              { l: "Cookie Policy", f: () => {} },
-              { l: "Refund Policy", f: () => {} },
-              { l: "Data Protection (NDPR)", f: () => {} },
+              { l: "Privacy Policy", id: "privacy" },
+              { l: "Terms of Service", id: "terms" },
+              { l: "Cookie Policy", id: "cookie" },
+              { l: "Refund Policy", id: "refund" },
+              { l: "Data Protection (NDPR)", id: "ndpr" },
             ].map((x) => (
-              <li key={x.l}>
-                <button onClick={x.f} className="text-smoke transition-colors hover:text-amber text-left">
+              <li key={x.id}>
+                {/* ✅ UPDATED: Navigates to the dedicated Legal Page */}
+                <button 
+                  onClick={() => go({ view: "legal", type: x.id } as any)} 
+                  className="text-smoke transition-colors hover:text-amber text-left"
+                >
                   {x.l}
                 </button>
               </li>
@@ -244,6 +259,9 @@ function Footer() {
   );
 }
 
+// ============================================
+// TOASTS
+// ============================================
 function Toasts() {
   const { toasts } = useStore();
   return (
@@ -258,6 +276,9 @@ function Toasts() {
   );
 }
 
+// ============================================
+// MAIN SHELL
+// ============================================
 function Shell() {
   const { route, authOpen } = useStore();
   return (
@@ -277,14 +298,15 @@ function Shell() {
         {route.view === "meetups" && <Meetups />}
         {route.view === "admin" && <AdminPanel />}
         {route.view === "course-editor" && <CourseEditor courseId={route.courseId} />}
+        
+        {/* ✅ NEW: Dedicated Legal Pages Routing */}
+        {route.view === "legal" && <LegalPage type={route.type as any} />}
       </main>
       <Footer />
       <Toasts />
       {authOpen && <AuthModal />}
       
-      {/* ADD THIS LINE RIGHT HERE */}
       <CookieConsent />
-      
     </div>
   );
 }

@@ -1,9 +1,12 @@
 import { useEffect, useState, useMemo } from "react";
+import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
 import { api } from "../lib/api";
 import { useStore } from "../lib/store";
 import ResourcePlayer from "../components/ResourcePlayer";
 import CheckoutModal from "../components/CheckoutModal";
 import { IconClaw, IconPlane } from "../components/Icons";
+import { bindBackButton, haptic, botDeepLink } from "../lib/telegram";
 
 export default function CourseDetail({ courseId }: { courseId: string }) {
   const { user, isEnrolled, completeLesson: markComplete, submitQuiz, go, toast, setAuthOpen } = useStore();
@@ -19,10 +22,14 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
   const [showCheckout, setShowCheckout] = useState(false);
   const [currency, setCurrency] = useState<'NGN' | 'USD'>('NGN');
   const [lessonResources, setLessonResources] = useState<Record<string, any[]>>({});
+  const [downloadingCert, setDownloadingCert] = useState(false); // ✅ NEW
 
   useEffect(() => {
     loadCourse();
   }, [courseId]);
+
+  // ✅ NEW: Native Telegram Mini App back button
+  useEffect(() => bindBackButton(() => go({ view: "courses" })), [go]);
 
   const loadCourse = async () => {
     setLoading(true);
@@ -64,8 +71,10 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
     try {
       await markComplete(courseId, lessonId);
       setCompletedLessons([...completedLessons, lessonId]);
+      haptic('success'); // ✅ NEW
       toast("✓ " + lessonTitle);
     } catch (e: any) {
+      haptic('error'); // ✅ NEW
       toast(e.message || "Failed to mark lesson");
     }
   };
@@ -101,14 +110,61 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
       await submitQuiz(courseId, score, total);
       setQuizScore({ score, total, passed });
       setQuizSubmitted(true);
+      haptic(passed ? 'success' : 'error'); // ✅ NEW
       if (passed) {
         toast("🎉 Quiz passed! You're one step from your certificate.");
       } else {
         toast("Quiz not passed. You need 70% to pass. Review and try again.");
       }
     } catch (e: any) {
+      haptic('error'); // ✅ NEW
       toast(e.message || "Failed to submit quiz");
     }
+  };
+
+  // ✅ NEW: Real PDF certificate generation
+  const downloadCertificate = async () => {
+    const element = document.getElementById('certificate-canvas');
+    if (!element) return;
+    setDownloadingCert(true);
+    toast("Generating your certificate PDF...");
+    try {
+      const canvas = await html2canvas(element, { scale: 2, backgroundColor: '#1a120a', useCORS: true });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      const yOffset = (pageHeight - imgHeight) / 2;
+      pdf.addImage(imgData, 'PNG', 0, yOffset, imgWidth, imgHeight);
+      pdf.save(`TigersLair_${course.code}_Certificate_${certificateId}.pdf`);
+      haptic('success');
+      toast("Certificate downloaded!");
+    } catch (e: any) {
+      haptic('error');
+      toast(e.message || "Failed to generate PDF");
+    } finally {
+      setDownloadingCert(false);
+    }
+  };
+
+  // ✅ NEW: Copy branded share text
+  const shareCertificate = async () => {
+    const text = `🐯 I just completed "${course.title}" (${course.code}) at Tiger's Lair Academy! Certificate ID: ${certificateId}`;
+    try {
+      await navigator.clipboard.writeText(text);
+      toast("Share text copied to clipboard!");
+    } catch {
+      toast(text);
+    }
+  };
+
+  // ✅ NEW: Native Telegram share sheet
+  const shareOnTelegram = () => {
+    const url = 'https://tigerslair.academy';
+    const text = `I just completed "${course.title}" (${course.code}) at Tiger's Lair Academy! 🐯 Certificate ID: ${certificateId}`;
+    window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`, '_blank');
   };
 
   const stats = useMemo(() => {
@@ -351,6 +407,21 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
                       All course materials — videos, PDFs, assignments, and announcements — are delivered directly to your private Telegram channel.
                     </p>
                     <p className="font-mono text-sm text-tgsky">{course.channel}</p>
+                    {/* ✅ NEW: Bot-powered channel invite */}
+                    {enrolled ? (
+                      course.channel ? (
+                        <button
+                          onClick={() => botDeepLink(`chan_${courseId}`)}
+                          className="mt-4 rounded-md bg-tgsky px-5 py-2.5 text-xs font-bold uppercase tracking-widest text-ink hover:bg-tgsky/90 transition-colors"
+                        >
+                          🔑 Get Channel Invite via Bot
+                        </button>
+                      ) : (
+                        <p className="mt-3 text-xs text-smoke">This course doesn't have a channel configured yet.</p>
+                      )
+                    ) : (
+                      <p className="mt-3 text-xs text-smoke">Enroll to receive your private channel invite through the bot.</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -747,8 +818,12 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
             </div>
           ) : (
             <div className="space-y-6">
-              {/* Certificate Preview */}
-              <div className="relative overflow-hidden rounded-2xl border-4 p-12 text-center" style={{ borderColor: course.hue, background: 'linear-gradient(135deg, #1a120a 0%, #211709 100%)' }}>
+              {/* Certificate Preview (✅ id added for PDF capture) */}
+              <div
+                id="certificate-canvas"
+                className="relative overflow-hidden rounded-2xl border-4 p-12 text-center"
+                style={{ borderColor: course.hue, background: 'linear-gradient(135deg, #1a120a 0%, #211709 100%)' }}
+              >
                 <div className="absolute inset-0 grid-lines opacity-20" />
                 <div className="relative">
                   <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full" style={{ backgroundColor: course.hue }}>
@@ -773,17 +848,25 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
               {/* Download / Share */}
               <div className="flex flex-wrap gap-3 justify-center">
                 <button
-                  onClick={() => toast("Certificate download coming soon")}
-                  className="stripe-btn rounded-md px-6 py-3 font-display text-sm font-extrabold uppercase tracking-widest text-ink"
+                  onClick={downloadCertificate}
+                  disabled={downloadingCert}
+                  className="stripe-btn rounded-md px-6 py-3 font-display text-sm font-extrabold uppercase tracking-widest text-ink disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
                   style={{ backgroundColor: course.hue }}
                 >
-                  Download PDF
+                  {downloadingCert && <div className="h-4 w-4 animate-spin rounded-full border-2 border-ink border-t-transparent" />}
+                  {downloadingCert ? "Generating..." : "Download PDF"}
                 </button>
                 <button
-                  onClick={() => toast("Share link copied")}
+                  onClick={shareCertificate}
                   className="rounded-md border border-bone/20 px-6 py-3 font-display text-sm font-bold uppercase tracking-widest text-bone hover:bg-bone/5"
                 >
                   Share Achievement
+                </button>
+                <button
+                  onClick={shareOnTelegram}
+                  className="rounded-md bg-tgsky px-6 py-3 font-display text-sm font-extrabold uppercase tracking-widest text-ink hover:bg-tgsky/90 transition-colors"
+                >
+                  Post to Telegram
                 </button>
               </div>
             </div>
@@ -791,16 +874,17 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
         </div>
       )}
 
-            {/* Checkout Modal */}
+      {/* Checkout Modal */}
       {showCheckout && (
         <CheckoutModal 
           courseId={courseId} 
           amount={activePrice} 
-          ngnAmount={course.price} // <-- THIS WAS MISSING
+          ngnAmount={course.price}
           currency={currency}
           courseTitle={course.title} 
           onClose={() => setShowCheckout(false)} 
         />
-      )}    </div>
+      )}
+    </div>
   );
 }
