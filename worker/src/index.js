@@ -552,9 +552,9 @@ export default {
         const course = await env.DB.prepare('SELECT * FROM courses WHERE id = ?').bind(courseId).first();
         if (!course) return error('Course not found', 404);
 
-        const modules = await env.DB.prepare('SELECT * FROM modules WHERE course_id = ? ORDER BY order_index').bind(courseId).all();
-        const lessons = await env.DB.prepare('SELECT * FROM lessons WHERE course_id = ? ORDER BY order_index').bind(courseId).all();
-        const quiz = await env.DB.prepare('SELECT * FROM quiz_questions WHERE course_id = ? ORDER BY order_index').bind(courseId).all();
+        const modules = await env.DB.prepare('SELECT * FROM modules WHERE course_id = ? ORDER BY order_index, rowid').bind(courseId).all();
+        const lessons = await env.DB.prepare('SELECT * FROM lessons WHERE course_id = ? ORDER BY order_index, rowid').bind(courseId).all();
+        const quiz = await env.DB.prepare('SELECT * FROM quiz_questions WHERE course_id = ? ORDER BY order_index, rowid').bind(courseId).all();
 
         try { course.outcomes = JSON.parse(course.outcomes); } catch { course.outcomes = []; }
         try { course.skills = JSON.parse(course.skills); } catch { course.skills = []; }
@@ -962,26 +962,58 @@ export default {
         return json({ success: true });
       }
 
+      // ✅ FIXED: Module creation now computes next index server-side (no more 0 || 99 bug)
       if (path.match(/\/api\/admin\/courses\/[^/]+\/modules/) && method === 'POST') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
         const courseId = parts[3];
-        const { title, orderIndex } = await request.json();
-        const result = await env.DB.prepare('INSERT INTO modules (course_id, title, order_index) VALUES (?, ?, ?)').bind(courseId, title, orderIndex || 99).run();
+        const { title } = await request.json();
+        const next = await env.DB.prepare('SELECT COALESCE(MAX(order_index), -1) + 1 AS n FROM modules WHERE course_id = ?').bind(courseId).first();
+        const result = await env.DB.prepare('INSERT INTO modules (course_id, title, order_index) VALUES (?, ?, ?)').bind(courseId, title, next.n).run();
         await logAudit(env, token, 'MODULE_CREATED', `Created module in course ID: ${courseId}`);
         return json({ data: { id: result.meta.last_row_id } });
       }
 
-      // ✅ ENHANCED: Lesson creation now broadcasts to the course's Telegram channel
+      // ✅ NEW: Rename module
+      if (path.match(/^\/api\/admin\/modules\/[^/]+$/) && method === 'PUT') {
+        const token = getToken();
+        const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
+        if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
+        const moduleId = parts[3];
+        const { title } = await request.json();
+        await env.DB.prepare('UPDATE modules SET title = ? WHERE id = ?').bind(title, moduleId).run();
+        await logAudit(env, token, 'MODULE_UPDATED', `Renamed module ID: ${moduleId}`);
+        return json({ success: true });
+      }
+
+      // ✅ NEW: Delete module (cascades to its units + their resources/completions)
+      if (path.match(/^\/api\/admin\/modules\/[^/]+$/) && method === 'DELETE') {
+        const token = getToken();
+        const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
+        if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
+        const moduleId = parts[3];
+        const lessonRows = await env.DB.prepare('SELECT id FROM lessons WHERE module_id = ?').bind(moduleId).all();
+        for (const l of lessonRows.results) {
+          await env.DB.prepare('DELETE FROM resources WHERE lesson_id = ?').bind(l.id).run();
+          await env.DB.prepare('DELETE FROM lesson_completions WHERE lesson_id = ?').bind(l.id).run();
+        }
+        await env.DB.prepare('DELETE FROM lessons WHERE module_id = ?').bind(moduleId).run();
+        await env.DB.prepare('DELETE FROM modules WHERE id = ?').bind(moduleId).run();
+        await logAudit(env, token, 'MODULE_DELETED', `Deleted module ID: ${moduleId}`);
+        return json({ success: true });
+      }
+
+      // ✅ ENHANCED: Lesson creation now computes next index server-side + broadcasts to Telegram channel
       if (path.match(/\/api\/admin\/courses\/[^/]+\/lessons/) && method === 'POST') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
         const courseId = parts[3];
-        const { id, moduleId, title, minutes, tags, bullets, msg, youtubeUrl, orderIndex } = await request.json();
+        const { id, moduleId, title, minutes, tags, bullets, msg, youtubeUrl } = await request.json();
         const lessonId = id || 'les_' + uid();
-        await env.DB.prepare(`INSERT INTO lessons (id, module_id, course_id, title, minutes, tags, bullets, msg, youtube_url, order_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(lessonId, moduleId, courseId, title, minutes, JSON.stringify(tags || []), JSON.stringify(bullets || []), msg || 0, youtubeUrl || null, orderIndex || 99).run();
+        const next = await env.DB.prepare('SELECT COALESCE(MAX(order_index), -1) + 1 AS n FROM lessons WHERE module_id = ?').bind(moduleId).first();
+        await env.DB.prepare(`INSERT INTO lessons (id, module_id, course_id, title, minutes, tags, bullets, msg, youtube_url, order_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(lessonId, moduleId, courseId, title, minutes, JSON.stringify(tags || []), JSON.stringify(bullets || []), msg || 0, youtubeUrl || null, next.n).run();
         await logAudit(env, token, 'LESSON_CREATED', `Created lesson in course ID: ${courseId}`);
 
         // Broadcast the lesson drop to the course's Telegram channel
@@ -1030,13 +1062,15 @@ export default {
         return json({ success: true });
       }
 
+      // ✅ FIXED: Quiz question creation now computes next index server-side
       if (path.match(/\/api\/admin\/courses\/[^/]+\/quiz/) && method === 'POST') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
         const courseId = parts[3];
-        const { question, options, answer, orderIndex } = await request.json();
-        await env.DB.prepare('INSERT INTO quiz_questions (course_id, question, options, answer, order_index) VALUES (?, ?, ?, ?, ?)').bind(courseId, question, JSON.stringify(options), answer, orderIndex || 99).run();
+        const { question, options, answer } = await request.json();
+        const next = await env.DB.prepare('SELECT COALESCE(MAX(order_index), -1) + 1 AS n FROM quiz_questions WHERE course_id = ?').bind(courseId).first();
+        await env.DB.prepare('INSERT INTO quiz_questions (course_id, question, options, answer, order_index) VALUES (?, ?, ?, ?, ?)').bind(courseId, question, JSON.stringify(options), answer, next.n).run();
         await logAudit(env, token, 'QUIZ_QUESTION_CREATED', `Added quiz question to course ID: ${courseId}`);
         return json({ success: true });
       }

@@ -169,6 +169,13 @@ export const api = {
     request<{ data: any }>(`/api/admin/courses/${courseId}/modules`, {
       method: 'POST', body: JSON.stringify(data)
     }),
+  // ✅ NEW: Rename and Delete Module (cascades to units + resources)
+  renameModule: (moduleId: string, title: string) =>
+    request<{ success: boolean }>(`/api/admin/modules/${moduleId}`, {
+      method: 'PUT', body: JSON.stringify({ title })
+    }),
+  deleteModule: (moduleId: string) =>
+    request<{ success: boolean }>(`/api/admin/modules/${moduleId}`, { method: 'DELETE' }),
   addLesson: (courseId: string, data: any) =>
     request<{ data: any }>(`/api/admin/courses/${courseId}/lessons`, {
       method: 'POST', body: JSON.stringify(data)
