@@ -6,6 +6,7 @@ import { useStore } from "../lib/store";
 import ResourcePlayer from "../components/ResourcePlayer";
 import CheckoutModal from "../components/CheckoutModal";
 import { IconClaw, IconPlane } from "../components/Icons";
+import { BADGE_MAP } from "../components/Badges";
 import { bindBackButton, haptic, botDeepLink } from "../lib/telegram";
 
 export default function CourseDetail({ courseId }: { courseId: string }) {
@@ -67,10 +68,20 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
       return;
     }
     try {
-      await markComplete(courseId, lessonId);
+      const res = await markComplete(courseId, lessonId);
       setCompletedLessons([...completedLessons, lessonId]);
       haptic('success');
       toast("✓ " + lessonTitle);
+
+      // Badge toast integration
+      if (res && res.awarded && res.awarded.length > 0) {
+        res.awarded.forEach((id: string) => {
+          const b = BADGE_MAP[id];
+          if (b) {
+            toast(`🏅 Badge unlocked: ${b.name}`);
+          }
+        });
+      }
     } catch (e: any) {
       haptic('error');
       toast(e.message || "Failed to mark lesson");
@@ -102,10 +113,10 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
     });
 
     const total = course.quiz.length;
-    const passed = score / total >= 0.7;
 
     try {
-      await submitQuiz(courseId, score, total);
+      const res = await submitQuiz(courseId, score, total);
+      const passed = res.passed;
       setQuizScore({ score, total, passed });
       setQuizSubmitted(true);
       haptic(passed ? 'success' : 'error');
@@ -113,6 +124,16 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
         toast("🎉 Quiz passed! You're one step from your certificate.");
       } else {
         toast("Quiz not passed. You need 70% to pass. Review and try again.");
+      }
+
+      // Badge toast integration
+      if (res.awarded && res.awarded.length > 0) {
+        res.awarded.forEach((id: string) => {
+          const b = BADGE_MAP[id];
+          if (b) {
+            toast(`🏅 Badge unlocked: ${b.name}`);
+          }
+        });
       }
     } catch (e: any) {
       haptic('error');

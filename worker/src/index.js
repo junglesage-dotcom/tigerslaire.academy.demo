@@ -44,12 +44,120 @@ async function logAudit(env, adminId, action, details) {
   } catch (e) { console.error('Failed to log audit:', e); }
 }
 
+// ✅ UPDATED: Secure Password Hashing (PBKDF2 with Salt)
 async function hashPassword(password) {
   const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw', encoder.encode(password), { name: 'PBKDF2' }, false, ['deriveBits']
+  );
+  const derivedBits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+    keyMaterial, 256
+  );
+  const hashArray = Array.from(new Uint8Array(derivedBits));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  const saltHex = Array.from(salt).map(b => b.toString(16).padStart(2, '0')).join('');
+  return `${saltHex}:${hashHex}`;
+}
+
+// ✅ NEW: Secure Password Verification
+async function verifyPassword(password, storedHash) {
+  try {
+    const [saltHex, hashHex] = storedHash.split(':');
+    const salt = new Uint8Array(saltHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+    const encoder = new TextEncoder();
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw', encoder.encode(password), { name: 'PBKDF2' }, false, ['deriveBits']
+    );
+    const derivedBits = await crypto.subtle.deriveBits(
+      { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+      keyMaterial, 256
+    );
+    const computedHash = Array.from(new Uint8Array(derivedBits)).map(b => b.toString(16).padStart(2, '0')).join('');
+    return computedHash === hashHex;
+  } catch (e) {
+    return false;
+  }
+}
+
+// ✅ NEW: Cookie Helpers for HttpOnly Sessions
+function getCookie(request, name) {
+  const cookie = request.headers.get('Cookie') || '';
+  const match = cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function setCookie(name, value, maxAge) {
+  return `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Strict`;
+}
+
+// ✅ NEW: Rate Limiting Helper
+async function checkRateLimit(env, identifier, limit = 10, windowMs = 3600000) {
+  const now = Date.now();
+  const windowStart = now - windowMs;
+  await env.DB.prepare('DELETE FROM rate_limits WHERE identifier = ? AND timestamp < ?').bind(identifier, windowStart).run();
+  const count = await env.DB.prepare('SELECT COUNT(*) as c FROM rate_limits WHERE identifier = ?').bind(identifier).first();
+  if (count.c >= limit) return false;
+  await env.DB.prepare('INSERT INTO rate_limits (identifier, timestamp) VALUES (?, ?)').bind(identifier, now).run();
+  return true;
+}
+
+// ============================================
+// BADGE ENGINE (server-side, integrity-safe)
+// ============================================
+async function evaluateBadges(env, userId, courseId) {
+  const awarded = [];
+  const earned = new Set((await env.DB.prepare('SELECT badge_id FROM user_badges WHERE user_id = ?').bind(userId).all()).results.map(r => r.badge_id));
+  
+  const grant = async (id) => {
+    if (earned.has(id)) return;
+    await env.DB.prepare('INSERT OR IGNORE INTO user_badges (user_id, badge_id, earned_at) VALUES (?, ?, ?)').bind(userId, id, Date.now()).run();
+    earned.add(id); 
+    awarded.push(id);
+  };
+
+  const done = (await env.DB.prepare('SELECT COUNT(*) n FROM lesson_completions WHERE user_id = ?').bind(userId).first()).n;
+  if (done >= 1) await grant('first_steps');
+
+  const w7 = (await env.DB.prepare('SELECT COUNT(DISTINCT completed_at / 86400000) n FROM lesson_completions WHERE user_id = ? AND completed_at > ?').bind(userId, Date.now() - 7 * 86400000).first()).n;
+  if (w7 >= 7) await grant('streak_7');
+  
+  const w30 = (await env.DB.prepare('SELECT COUNT(DISTINCT completed_at / 86400000) n FROM lesson_completions WHERE user_id = ? AND completed_at > ?').bind(userId, Date.now() - 30 * 86400000).first()).n;
+  if (w30 >= 30) await grant('streak_30');
+
+  if (courseId) {
+    const mod = await env.DB.prepare(`SELECT m.id FROM modules m WHERE m.course_id = ?
+      AND (SELECT COUNT(*) FROM lessons l WHERE l.module_id = m.id) > 0
+      AND (SELECT COUNT(*) FROM lessons l WHERE l.module_id = m.id) =
+          (SELECT COUNT(*) FROM lesson_completions lc JOIN lessons l ON l.id = lc.lesson_id WHERE l.module_id = m.id AND lc.user_id = ?)
+      LIMIT 1`).bind(courseId, userId).first();
+    if (mod) await grant('module_master');
+
+    const enr = await env.DB.prepare('SELECT quiz_passed, quiz_score, quiz_total FROM enrollments WHERE user_id = ? AND course_id = ?').bind(userId, courseId).first();
+    if (enr && enr.quiz_passed) {
+      await grant('gate_keeper');
+      if (enr.quiz_total > 0 && enr.quiz_score === enr.quiz_total) await grant('perfect_gate');
+    }
+    
+    const tot = await env.DB.prepare(`SELECT (SELECT COUNT(*) FROM lessons WHERE course_id = ?) total,
+      (SELECT COUNT(*) FROM lesson_completions lc JOIN lessons l ON l.id = lc.lesson_id WHERE l.course_id = ? AND lc.user_id = ?) done`).bind(courseId, courseId, userId).first();
+    if (tot && tot.total > 0 && tot.done >= tot.total && enr && enr.quiz_passed) await grant('course_conqueror');
+    
+    const cert = await env.DB.prepare('SELECT 1 ok FROM certificates WHERE user_id = ? AND course_id = ?').bind(userId, courseId).first();
+    if (cert) await grant('certified');
+  }
+
+  const pay = await env.DB.prepare(`SELECT 1 ok FROM payments WHERE user_id = ? AND status = 'paid' AND payment_plan = 'full' LIMIT 1`).bind(userId).first();
+  if (pay) await grant('settled');
+  
+  const meet = await env.DB.prepare(`SELECT 1 ok FROM meetup_attendees WHERE user_id = ? LIMIT 1`).bind(userId).first();
+  if (meet) await grant('community');
+  
+  const ment = await env.DB.prepare(`SELECT 1 ok FROM mentorship_applications WHERE user_id = ? AND status = 'agreed' LIMIT 1`).bind(userId).first();
+  if (ment) await grant('mentored');
+
+  return awarded;
 }
 
 // ============================================
@@ -331,6 +439,9 @@ async function settlePayment(env, reference, approve, adminName) {
   if (approve) {
     await env.DB.prepare("UPDATE payments SET status = 'paid', updated_at = ? WHERE id = ?").bind(Date.now(), payment.id).run();
     if (payment.course_id) await env.DB.prepare('INSERT OR IGNORE INTO enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, ?)').bind(payment.user_id, payment.course_id, Date.now()).run();
+    
+    await evaluateBadges(env, payment.user_id, payment.course_id);
+    
     await notifyUser(env, payment.user_id, `✅ Your payment (${reference}) was approved by ${adminName}. You're enrolled — open the app to start learning!`);
     return `✅ APPROVED by ${adminName}\nPayment: ${reference}\nStudent enrolled.`;
   }
@@ -348,6 +459,9 @@ async function settleInstallment(env, installmentId, approve, adminName) {
     if (inst.course_id) await env.DB.prepare('INSERT OR IGNORE INTO enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, ?)').bind(inst.user_id, inst.course_id, Date.now()).run();
     const remaining = await env.DB.prepare("SELECT COUNT(*) AS n FROM installments WHERE payment_id = ? AND status != 'paid'").bind(inst.payment_id).first();
     if (remaining.n === 0) await env.DB.prepare("UPDATE payments SET status = 'paid', updated_at = ? WHERE id = ?").bind(Date.now(), inst.payment_id).run();
+    
+    await evaluateBadges(env, inst.user_id, inst.course_id);
+    
     await notifyUser(env, inst.user_id, `✅ Installment (${inst.id}) approved by ${adminName}. ${remaining.n === 0 ? 'Plan fully paid — thank you!' : 'Keep learning — next due date applies.'}`);
     return `✅ APPROVED by ${adminName}\nInstallment: ${inst.id}\nRemaining: ${remaining.n}`;
   }
@@ -367,7 +481,6 @@ export default {
 
     const parts = path.split('/').filter(Boolean);
 
-    // ✅ SECURITY: Lock down CORS to specific origins
     const origin = request.headers.get('Origin') || '';
     const allowedOrigins = [
       'https://tigerslair.academy',
@@ -379,21 +492,31 @@ export default {
     const isAllowedOrigin = allowedOrigins.includes(origin) || origin.endsWith('.telegram.org') || origin.endsWith('.pages.dev');
     
     const corsHeaders = {
-      'Access-Control-Allow-Origin': isAllowedOrigin ? origin : allowedOrigins[0],
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
-      'Pragma': 'no-cache',
-      'Expires': '0',
-      'Surrogate-Control': 'no-store'
-    };
+  'Access-Control-Allow-Origin': isAllowedOrigin ? origin : allowedOrigins[0],
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, Cookie',
+  'Access-Control-Allow-Credentials': 'true',
+  'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+  'Pragma': 'no-cache',
+  'Expires': '0',
+  'Surrogate-Control': 'no-store'
+};
 
     if (method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
     const uid = () => Math.random().toString(36).slice(2, 10);
-    const getToken = () => request.headers.get('Authorization')?.replace('Bearer ', '');
+    
+    // ✅ UPDATED: Get token from HttpOnly cookie instead of Authorization header
+    const getToken = () => getCookie(request, 'tigerslair.session');
     const json = (data, status = 200) => Response.json(data, { status, headers: corsHeaders });
     const error = (msg, status) => json({ error: msg }, status);
+
+    // Helper for auth responses with cookies
+    const authResponse = (data, status = 200, cookies = []) => {
+      const headers = new Headers(corsHeaders);
+      cookies.forEach(c => headers.append('Set-Cookie', c));
+      return new Response(JSON.stringify(data), { status, headers });
+    };
 
     try {
       // ============================================
@@ -478,16 +601,25 @@ export default {
       }
 
       if (path === '/api/payments/approve' && method === 'POST') {
-        const { reference, adminToken } = await request.json();
-        const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(adminToken).first();
-        if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        const payment = await env.DB.prepare('SELECT * FROM payments WHERE reference = ?').bind(reference).first();
-        if (!payment) return error('Payment not found', 404);
-        await env.DB.prepare('UPDATE payments SET status = ?, updated_at = ? WHERE id = ?').bind('paid', Date.now(), payment.id).run();
-        if (payment.course_id) await env.DB.prepare('INSERT OR IGNORE INTO enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, ?)').bind(payment.user_id, payment.course_id, Date.now()).run();
-        await logAudit(env, adminToken, 'PAYMENT_APPROVED', `Approved payment reference: ${reference}`);
-        return json({ success: true });
-      }
+  const { reference } = await request.json();
+  const adminId = getToken(); // ✅ Reads from HttpOnly cookie
+  if (!adminId) return error('Unauthorized', 401);
+
+  const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(adminId).first();
+  if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
+  
+  const payment = await env.DB.prepare('SELECT * FROM payments WHERE reference = ?').bind(reference).first();
+  if (!payment) return error('Payment not found', 404);
+  
+  await env.DB.prepare('UPDATE payments SET status = ?, updated_at = ? WHERE id = ?').bind('paid', Date.now(), payment.id).run();
+  if (payment.course_id) await env.DB.prepare('INSERT OR IGNORE INTO enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, ?)').bind(payment.user_id, payment.course_id, Date.now()).run();
+  
+  await evaluateBadges(env, payment.user_id, payment.course_id);
+  await logAudit(env, adminId, 'PAYMENT_APPROVED', `Approved payment reference: ${reference}`);
+  
+  return json({ success: true });
+}
+
 
       // ============================================
       // INSTALLMENTS API
@@ -508,21 +640,28 @@ export default {
       }
 
       if (path === '/api/installments/approve' && method === 'POST') {
-        const { installmentId, adminToken } = await request.json();
-        const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(adminToken).first();
-        if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        const inst = await env.DB.prepare('SELECT * FROM installments WHERE id = ?').bind(installmentId).first();
-        if (!inst) return error('Installment not found', 404);
-        await env.DB.prepare('UPDATE installments SET status = ? WHERE id = ?').bind('paid', installmentId).run();
-        const pendingCount = await env.DB.prepare('SELECT COUNT(*) as count FROM installments WHERE payment_id = ? AND status != ?', inst.payment_id, 'paid').first();
-        if (pendingCount.count === 0) {
-          await env.DB.prepare('UPDATE payments SET status = ? WHERE id = ?').bind('paid', inst.payment_id).run();
-          if (inst.course_id) await env.DB.prepare('INSERT OR IGNORE INTO enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, ?)').bind(inst.user_id, inst.course_id, Date.now()).run();
-        }
-        await logAudit(env, adminToken, 'INSTALLMENT_APPROVED', `Approved installment ID: ${installmentId}`);
-        return json({ success: true });
-      }
+  const { installmentId } = await request.json();
+  const adminId = getToken(); // ✅ Reads from HttpOnly cookie
+  if (!adminId) return error('Unauthorized', 401);
 
+  const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(adminId).first();
+  if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
+  
+  const inst = await env.DB.prepare('SELECT * FROM installments WHERE id = ?').bind(installmentId).first();
+  if (!inst) return error('Installment not found', 404);
+  
+  await env.DB.prepare('UPDATE installments SET status = ? WHERE id = ?').bind('paid', installmentId).run();
+  const pendingCount = await env.DB.prepare('SELECT COUNT(*) as count FROM installments WHERE payment_id = ? AND status != ?', inst.payment_id, 'paid').first();
+  if (pendingCount.count === 0) {
+    await env.DB.prepare('UPDATE payments SET status = ? WHERE id = ?').bind('paid', inst.payment_id).run();
+    if (inst.course_id) await env.DB.prepare('INSERT OR IGNORE INTO enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, ?)').bind(inst.user_id, inst.course_id, Date.now()).run();
+  }
+  
+  await evaluateBadges(env, inst.user_id, inst.course_id);
+  await logAudit(env, adminId, 'INSTALLMENT_APPROVED', `Approved installment ID: ${installmentId}`);
+  
+  return json({ success: true });
+}
       if (path === '/api/admin/installments' && method === 'GET') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
@@ -575,7 +714,7 @@ export default {
       }
 
       // ============================================
-      // ✅ NEW: PUBLIC CERTIFICATE VERIFICATION (no auth required)
+      // PUBLIC CERTIFICATE VERIFICATION (no auth required)
       // ============================================
       if (path.startsWith('/api/certificates/') && method === 'GET') {
         const certId = decodeURIComponent(parts[2] || '');
@@ -593,7 +732,7 @@ export default {
         const user = await env.DB.prepare('SELECT id, name FROM users WHERE email = ?').bind(email).first();
         if (user) {
           const otp = Math.floor(100000 + Math.random() * 900000).toString();
-          const expires = Date.now() + 15 * 60 * 1000; // 15 mins
+          const expires = Date.now() + 15 * 60 * 1000;
           await env.DB.prepare('INSERT OR REPLACE INTO password_resets (user_id, token, expires_at) VALUES (?, ?, ?)').bind(user.id, otp, expires).run();
           console.log(`🔐 OTP for ${email}: ${otp}`); 
           return json({ success: true, message: 'If an account exists, an OTP has been sent.', dev_otp: otp });
@@ -615,28 +754,87 @@ export default {
       }
 
       // ============================================
-      // AUTH API (With Password Hashing)
+      // AUTH API (With Secure Hashing & Rate Limiting)
       // ============================================
       if (path === '/api/auth/register' && method === 'POST') {
         const { name, email, password } = await request.json();
         if (!password || password.length < 6) return error('Password must be at least 6 characters', 400);
+        
+        const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
+        const isAllowed = await checkRateLimit(env, `register_${clientIP}`, 5, 3600000);
+        if (!isAllowed) return error('Too many registration attempts. Please try again in an hour.', 429);
+
         const id = 'st_' + uid();
         const passwordHash = await hashPassword(password);
         try {
           await env.DB.prepare('INSERT INTO users (id, name, email, password_hash, joined_at) VALUES (?, ?, ?, ?, ?)').bind(id, name, email, passwordHash, Date.now()).run();
           const user = await env.DB.prepare('SELECT id, name, email, role, joined_at FROM users WHERE id = ?').bind(id).first();
-          return json({ data: user, token: id });
+          
+          const cookies = [
+            setCookie('tigerslair.session', id, 7 * 24 * 60 * 60),
+            setCookie('tigerslair.refresh', id, 30 * 24 * 60 * 60)
+          ];
+          return authResponse({ data: user, success: true }, 200, cookies);
         } catch (e) { return error('Email already registered', 400); }
       }
 
       if (path === '/api/auth/login' && method === 'POST') {
         const { email, password } = await request.json();
+        
+        const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
+        const isAllowed = await checkRateLimit(env, `login_${clientIP}`, 10, 3600000);
+        if (!isAllowed) return error('Too many login attempts. Please try again in an hour.', 429);
+
         const user = await env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(email).first();
         if (!user) return error('Invalid email or password', 401);
-        const inputHash = await hashPassword(password || '');
-        if (inputHash !== user.password_hash) return error('Invalid email or password', 401);
+        
+        let isValid = await verifyPassword(password, user.password_hash);
+        
+        // ✅ Backward compatibility: migrate old SHA-256 hashes on first login
+        if (!isValid && user.password_hash && user.password_hash.length === 64 && !user.password_hash.includes(':')) {
+          const encoder = new TextEncoder();
+          const data = encoder.encode(password);
+          const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+          const hashArray = Array.from(new Uint8Array(hashBuffer));
+          const oldHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+          
+          if (oldHash === user.password_hash) {
+            isValid = true;
+            const newHash = await hashPassword(password);
+            await env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?').bind(newHash, user.id).run();
+          }
+        }
+
+        if (!isValid) return error('Invalid email or password', 401);
+        
         const { password_hash, ...safeUser } = user;
-        return json({ data: safeUser, token: user.id });
+        
+        const cookies = [
+          setCookie('tigerslair.session', user.id, 7 * 24 * 60 * 60),
+          setCookie('tigerslair.refresh', user.id, 30 * 24 * 60 * 60)
+        ];
+        return authResponse({ data: safeUser, success: true }, 200, cookies);
+      }
+
+      // ✅ NEW: Refresh Token Endpoint
+      if (path === '/api/auth/refresh' && method === 'POST') {
+        const refreshToken = getCookie(request, 'tigerslair.refresh');
+        if (!refreshToken) return error('Unauthorized', 401);
+        
+        const user = await env.DB.prepare('SELECT id, name, email, role, joined_at FROM users WHERE id = ?').bind(refreshToken).first();
+        if (!user) return error('Unauthorized', 401);
+        
+        const cookies = [setCookie('tigerslair.session', user.id, 7 * 24 * 60 * 60)];
+        return authResponse({ data: user, success: true }, 200, cookies);
+      }
+
+      // ✅ NEW: Logout Endpoint
+      if (path === '/api/auth/logout' && method === 'POST') {
+        const cookies = [
+          setCookie('tigerslair.session', '', 0),
+          setCookie('tigerslair.refresh', '', 0)
+        ];
+        return authResponse({ success: true }, 200, cookies);
       }
 
       if (path === '/api/auth/demo' && method === 'POST') {
@@ -648,7 +846,7 @@ export default {
           await env.DB.prepare('INSERT INTO enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, ?)').bind(demoId, 'py101', now - 18 * 86400000).run();
           user = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(demoId).first();
         }
-        return json({ data: user, token: demoId });
+        return json({ data: user, token: demoId }); // Note: demo still returns token for simplicity, or you can update it to use cookies
       }
 
       if (path === '/api/user/me' && method === 'GET') {
@@ -685,11 +883,12 @@ export default {
         const { lessonId, courseId } = await request.json();
         try {
           await env.DB.prepare('INSERT INTO lesson_completions (user_id, lesson_id, completed_at) VALUES (?, ?, ?)').bind(token, lessonId, Date.now()).run();
-          return json({ success: true });
+          
+          const awarded = await evaluateBadges(env, token, courseId);
+          return json({ success: true, awarded });
         } catch (e) { return error('Already completed', 400); }
       }
 
-      // ✅ ENHANCED: Quiz submission now also issues server-side certificates
       if (path === '/api/quiz/submit' && method === 'POST') {
         const token = getToken();
         if (!token) return error('Unauthorized', 401);
@@ -697,7 +896,6 @@ export default {
         const passed = score / total >= 0.7 ? 1 : 0;
         await env.DB.prepare('UPDATE enrollments SET quiz_score = ?, quiz_total = ?, quiz_passed = ? WHERE user_id = ? AND course_id = ?').bind(score, total, passed, token, courseId).run();
 
-        // Issue certificate when passed AND all lessons are complete
         if (passed) {
           try {
             const course = await env.DB.prepare('SELECT code FROM courses WHERE id = ?').bind(courseId).first();
@@ -710,7 +908,9 @@ export default {
             }
           } catch (e) { console.error('Certificate issue failed:', e); }
         }
-        return json({ passed: !!passed });
+        
+        const awarded = await evaluateBadges(env, token, courseId);
+        return json({ passed: !!passed, awarded });
       }
 
       if (path === '/api/activity' && method === 'GET') {
@@ -801,6 +1001,9 @@ export default {
         const app = await env.DB.prepare('SELECT * FROM mentorship_applications WHERE id = ? AND user_id = ?').bind(appId, token).first();
         if (!app) return error('Application not found', 404);
         await env.DB.prepare('UPDATE mentorship_applications SET agreed_price = ?, status = ?, agreed_at = ? WHERE id = ?').bind(app.proposed_price, 'agreed', Date.now(), appId).run();
+        
+        await evaluateBadges(env, token, null);
+        
         return json({ success: true });
       }
 
@@ -843,6 +1046,9 @@ export default {
         const meetupId = parts[2];
         const { status } = await request.json();
         await env.DB.prepare('INSERT INTO meetup_attendees (meetup_id, user_id, status, rsvp_at) VALUES (?, ?, ?, ?) ON CONFLICT(meetup_id, user_id) DO UPDATE SET status = ?, rsvp_at = ?').bind(meetupId, token, status, Date.now(), status, Date.now()).run();
+        
+        await evaluateBadges(env, token, null);
+        
         return json({ success: true });
       }
 
@@ -962,7 +1168,6 @@ export default {
         return json({ success: true });
       }
 
-      // ✅ FIXED: Module creation now computes next index server-side (no more 0 || 99 bug)
       if (path.match(/\/api\/admin\/courses\/[^/]+\/modules/) && method === 'POST') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
@@ -975,7 +1180,6 @@ export default {
         return json({ data: { id: result.meta.last_row_id } });
       }
 
-      // ✅ NEW: Rename module
       if (path.match(/^\/api\/admin\/modules\/[^/]+$/) && method === 'PUT') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
@@ -987,7 +1191,6 @@ export default {
         return json({ success: true });
       }
 
-      // ✅ NEW: Delete module (cascades to its units + their resources/completions)
       if (path.match(/^\/api\/admin\/modules\/[^/]+$/) && method === 'DELETE') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
@@ -1004,7 +1207,6 @@ export default {
         return json({ success: true });
       }
 
-      // ✅ ENHANCED: Lesson creation now computes next index server-side + broadcasts to Telegram channel
       if (path.match(/\/api\/admin\/courses\/[^/]+\/lessons/) && method === 'POST') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
@@ -1016,7 +1218,6 @@ export default {
         await env.DB.prepare(`INSERT INTO lessons (id, module_id, course_id, title, minutes, tags, bullets, msg, youtube_url, order_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(lessonId, moduleId, courseId, title, minutes, JSON.stringify(tags || []), JSON.stringify(bullets || []), msg || 0, youtubeUrl || null, next.n).run();
         await logAudit(env, token, 'LESSON_CREATED', `Created lesson in course ID: ${courseId}`);
 
-        // Broadcast the lesson drop to the course's Telegram channel
         try {
           const course = await env.DB.prepare('SELECT code, title, channel FROM courses WHERE id = ?').bind(courseId).first();
           if (course && course.channel) {
@@ -1062,7 +1263,6 @@ export default {
         return json({ success: true });
       }
 
-      // ✅ FIXED: Quiz question creation now computes next index server-side
       if (path.match(/\/api\/admin\/courses\/[^/]+\/quiz/) && method === 'POST') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
@@ -1075,7 +1275,6 @@ export default {
         return json({ success: true });
       }
 
-      // ✅ Quiz Question Editor (Update & Delete)
       if (path.match(/\/api\/admin\/courses\/[^/]+\/quiz\/[^/]+/) && method === 'PUT') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
@@ -1247,7 +1446,6 @@ export default {
         return json({ success: true });
       }
 
-      // ✅ Audit Logs Viewer
       if (path === '/api/admin/audit-logs' && method === 'GET') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
@@ -1256,7 +1454,6 @@ export default {
         return json({ data: logs.results });
       }
 
-      // ✅ User Search
       if (path === '/api/admin/users' && method === 'GET') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
@@ -1298,6 +1495,63 @@ export default {
         await env.DB.prepare('DELETE FROM users WHERE id = ?').bind(userId).run();
         await logAudit(env, token, 'USER_DELETED', `Deleted user ID: ${userId}`);
         return json({ success: true });
+      }
+
+      // ============================================
+      // BADGES API
+      // ============================================
+      if (path === '/api/badges/mine' && method === 'GET') {
+        const token = getToken();
+        if (!token) return error('Unauthorized', 401);
+        const rows = await env.DB.prepare('SELECT badge_id, earned_at FROM user_badges WHERE user_id = ? ORDER BY earned_at DESC').bind(token).all();
+        return json({ data: rows.results });
+      }
+
+      // ============================================
+      // ADMIN BACKFILL BADGES
+      // ============================================
+      if (path === '/api/admin/backfill-badges' && method === 'POST') {
+        const adminHeader = request.headers.get('x-admin-secret');
+        if (adminHeader !== env.ADMIN_SECRET) {
+          return error('Unauthorized: Invalid admin secret', 403);
+        }
+
+        const body = await request.json().catch(() => ({}));
+        const offset = body.offset || 0;
+        const batchSize = 50;
+
+        const enrollments = await env.DB.prepare(`
+          SELECT user_id, course_id FROM enrollments 
+          LIMIT ? OFFSET ?
+        `).bind(batchSize, offset).all();
+
+        if (enrollments.results.length === 0) {
+          return json({ 
+            message: "Backfill complete. No more enrollments to process.", 
+            processed: 0, 
+            badges_awarded: 0,
+            finished: true 
+          });
+        }
+
+        let totalAwarded = 0;
+        const processedUsers = new Set();
+
+        for (const row of enrollments.results) {
+          if (processedUsers.has(row.user_id)) continue;
+          
+          const awarded = await evaluateBadges(env, row.user_id, row.course_id);
+          totalAwarded += awarded.length;
+          processedUsers.add(row.user_id);
+        }
+
+        return json({
+          message: `Processed batch starting at offset ${offset}`,
+          processed: enrollments.results.length,
+          badges_awarded: totalAwarded,
+          next_offset: offset + batchSize,
+          finished: enrollments.results.length < batchSize
+        });
       }
 
       return error('Not found', 404);

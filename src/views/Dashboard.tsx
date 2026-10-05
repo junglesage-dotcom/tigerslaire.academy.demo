@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { useStore } from "../lib/store";
+import { BadgeShelf } from "../components/Badges";
 
 export default function Dashboard() {
   const { user, go, toast, logout, isEnrolled, linkTelegram, unlinkTelegram } = useStore();
   const [enrollments, setEnrollments] = useState<any[]>([]);
   const [activity, setActivity] = useState<any[]>([]);
   const [installments, setInstallments] = useState<any[]>([]);
+  const [badges, setBadges] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
   const isTelegram = !!(window as any).Telegram?.WebApp?.initData;
@@ -17,11 +19,13 @@ export default function Dashboard() {
     Promise.all([
       api.getEnrollments(),
       api.getActivity(),
-      api.getMyInstallments()
-    ]).then(([enrollRes, actRes, instRes]) => {
+      api.getMyInstallments(),
+      api.getMyBadges().catch(() => ({ data: [] })) // Graceful fallback if badges API fails
+    ]).then(([enrollRes, actRes, instRes, badgesRes]) => {
       setEnrollments(enrollRes.data);
       setActivity(actRes.data);
       setInstallments(instRes.data);
+      setBadges(Object.fromEntries(badgesRes.data.map((b: any) => [b.badge_id, b.earned_at])));
     }).catch(err => {
       toast("Failed to load dashboard data");
     }).finally(() => setLoading(false));
@@ -162,6 +166,12 @@ export default function Dashboard() {
           <p className="text-xs font-bold uppercase tracking-widest text-smoke">Activity</p>
           <p className="mt-2 font-display text-3xl font-extrabold text-bone">{activity.length}</p>
         </div>
+      </div>
+
+      {/* NEW: Badge Case Section */}
+      <div className="mb-8 rounded-2xl border border-bone/10 bg-coal p-6">
+        <h2 className="font-display text-xl font-bold text-amber mb-4">Badge Case</h2>
+        <BadgeShelf earned={badges} />
       </div>
 
       <div className="grid gap-8 lg:grid-cols-3">

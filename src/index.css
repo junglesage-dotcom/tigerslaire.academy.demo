@@ -236,3 +236,40 @@ body {
     animation: none;
   }
 }
+
+/* ==========================================
+   BADGE SYSTEM ANIMATIONS
+   ========================================== */
+@keyframes badge-pop { 
+  0% { transform: scale(.6); opacity: 0; } 
+  60% { transform: scale(1.08); } 
+  100% { transform: scale(1); opacity: 1; } 
+}
+
+@keyframes badge-shine { 
+  0% { transform: translateX(-130%) rotate(12deg); } 
+  100% { transform: translateX(230%) rotate(12deg); } 
+}
+
+.badge-earn { 
+  animation: badge-pop .5s cubic-bezier(.2,1.4,.4,1) both; 
+  position: relative; 
+  overflow: hidden; 
+}
+
+.badge-earn::after { 
+  content: ""; 
+  position: absolute; 
+  inset: 0; 
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,.35) 50%, transparent 60%);
+  transform: translateX(-130%); 
+  animation: badge-shine 1.1s .35s ease both; 
+}
+
+@media (prefers-reduced-motion: reduce) { 
+  .badge-earn, 
+  .badge-earn::after { 
+    animation: none; 
+  } 
+}

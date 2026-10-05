@@ -1,27 +1,26 @@
 // src/lib/api.ts
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) || 'https://tigerslair-academy.ehisferguson.workers.dev';
 
-function getToken(): string | null {
-  return localStorage.getItem('tigerslair.token');
-}
-
-function setToken(token: string) {
-  localStorage.setItem('tigerslair.token', token);
-}
-
-export function clearToken() {
-  localStorage.removeItem('tigerslair.token');
+export function clearSession() {
+  // Cookies will be cleared by the /api/auth/logout endpoint
+  // This is just a frontend cleanup helper
+  document.cookie = 'tigerslair.session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+  document.cookie = 'tigerslair.refresh=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = getToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string> || {}),
   };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  // credentials: 'include' is the magic that sends/receives HttpOnly cookies
+  const res = await fetch(`${API_BASE}${path}`, { 
+    ...options, 
+    headers,
+    credentials: 'include' 
+  });
+  
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Request failed');
   return data;
@@ -31,24 +30,24 @@ export const api = {
   getCourses: () => request<{ data: any[] }>('/api/courses'),
   getCourse: (id: string) => request<{ data: any }>(`/api/courses/${id}`),
 
+  // ✅ UPDATED: No longer returns/sets token, relies on HttpOnly cookies
   register: (name: string, email: string, password: string) =>
-    request<{ data: any; token: string }>('/api/auth/register', {
+    request<{ data: any; success: boolean }>('/api/auth/register', {
       method: 'POST', body: JSON.stringify({ name, email, password })
-    }).then(res => { setToken(res.token); return res; }),
+    }),
 
   login: (email: string, password: string) =>
-    request<{ data: any; token: string }>('/api/auth/login', {
+    request<{ data: any; success: boolean }>('/api/auth/login', {
       method: 'POST', body: JSON.stringify({ email, password })
-    }).then(res => { setToken(res.token); return res; }),
+    }),
 
   loginDemo: () =>
-    request<{ data: any; token: string }>('/api/auth/demo', { method: 'POST' })
-      .then(res => { setToken(res.token); return res; }),
+    request<{ data: any; success: boolean }>('/api/auth/demo', { method: 'POST' }),
 
   createAdmin: (name: string, email: string) =>
-    request<{ data: any; token: string }>('/api/auth/admin', {
+    request<{ data: any; success: boolean }>('/api/auth/admin', {
       method: 'POST', body: JSON.stringify({ name, email })
-    }).then(res => { setToken(res.token); return res; }),
+    }),
 
   // ✅ Password Reset Flow
   forgotPassword: (email: string) =>
@@ -60,6 +59,10 @@ export const api = {
       method: 'POST', body: JSON.stringify({ email, otp, newPassword })
     }),
 
+  // ✅ NEW: Session Management
+  logout: () => request<{ success: boolean }>('/api/auth/logout', { method: 'POST' }),
+  refresh: () => request<{ success: boolean }>('/api/auth/refresh', { method: 'POST' }),
+
   getMe: () => request<{ data: any }>('/api/user/me'),
 
   enroll: (courseId: string) =>
@@ -68,13 +71,15 @@ export const api = {
     }),
   getEnrollments: () => request<{ data: any[] }>('/api/enrollments'),
 
+  // ✅ UPDATED: Returns awarded badges array
   completeLesson: (courseId: string, lessonId: string) =>
-    request<{ success: boolean }>('/api/lessons/complete', {
+    request<{ success: boolean; awarded?: string[] }>('/api/lessons/complete', {
       method: 'POST', body: JSON.stringify({ courseId, lessonId })
     }),
 
+  // ✅ UPDATED: Returns awarded badges array
   submitQuiz: (courseId: string, score: number, total: number) =>
-    request<{ passed: boolean }>('/api/quiz/submit', {
+    request<{ passed: boolean; awarded?: string[] }>('/api/quiz/submit', {
       method: 'POST', body: JSON.stringify({ courseId, score, total })
     }),
 
@@ -203,7 +208,6 @@ export const api = {
     request<{ data: any[] }>(`/api/courses/${courseId}/lessons/${lessonId}/resources`),
   
   uploadResource: async (file: File | null, externalUrl: string | null, courseId: string, lessonId: string, type: string) => {
-    const token = getToken();
     if (externalUrl) return { success: true, data: { url: externalUrl, type, name: 'External Link', sourceType: 'external' } };
     if (!file) throw new Error('No file or URL provided');
     const formData = new FormData();
@@ -211,9 +215,13 @@ export const api = {
     formData.append('courseId', courseId);
     formData.append('lessonId', lessonId);
     formData.append('type', type);
-    const headers: Record<string, string> = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    const res = await fetch(`${API_BASE}/api/admin/resources/upload`, { method: 'POST', headers, body: formData });
+    
+    // ✅ UPDATED: Added credentials: 'include' for cookie-based auth
+    const res = await fetch(`${API_BASE}/api/admin/resources/upload`, { 
+      method: 'POST', 
+      credentials: 'include',
+      body: formData 
+    });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Upload failed');
     return data;
@@ -223,8 +231,9 @@ export const api = {
     request<{ data: any }>(`/api/resources/stream/${resourceId}`),
 
   getResourceStreamUrl: (resourceId: string) => {
-    const token = getToken();
-    return `${API_BASE}/api/resources/stream/${resourceId}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+    // ✅ UPDATED: Token no longer needed in URL. Browser automatically sends cookies 
+    // with credentials: 'include' or for native <img>/<video> tags.
+    return `${API_BASE}/api/resources/stream/${resourceId}`;
   },
 
   createResource: (data: any) =>
@@ -249,9 +258,11 @@ export const api = {
     }),
 
   getPendingPayments: () => request<{ data: any[] }>('/api/admin/payments'),
+  
+  // ✅ UPDATED: Removed adminToken from body; worker should read it from the cookie
   approvePayment: (reference: string) =>
     request<{ success: boolean }>('/api/payments/approve', {
-      method: 'POST', body: JSON.stringify({ reference, adminToken: getToken() })
+      method: 'POST', body: JSON.stringify({ reference })
     }),
 
   getMyInstallments: () => request<{ data: any[] }>('/api/installments/my'),
@@ -261,9 +272,11 @@ export const api = {
     }),
 
   getAdminInstallments: () => request<{ data: any[] }>('/api/admin/installments'),
+  
+  // ✅ UPDATED: Removed adminToken from body; worker should read it from the cookie
   approveInstallment: (installmentId: string) =>
     request<{ success: boolean }>('/api/installments/approve', {
-      method: 'POST', body: JSON.stringify({ installmentId, adminToken: getToken() })
+      method: 'POST', body: JSON.stringify({ installmentId })
     }),
 
   getAnalytics: () => request<{ data: any }>('/api/admin/analytics'),
@@ -275,4 +288,7 @@ export const api = {
   // ✅ NEW: Public Certificate Verification (No auth required)
   verifyCertificate: (certId: string) =>
     request<{ valid: boolean; data?: any }>(`/api/certificates/${encodeURIComponent(certId)}`),
+
+  // ✅ NEW: Badges API
+  getMyBadges: () => request<{ data: { badge_id: string; earned_at: number }[] }>('/api/badges/mine'),
 };

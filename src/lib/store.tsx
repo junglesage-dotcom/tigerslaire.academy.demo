@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { api, clearToken } from "./api";
+import { api, clearSession } from "./api";
 
 /* ---------------- types ---------------- */
 export interface User {
@@ -36,7 +36,9 @@ export type Route =
   | { view: "counseling" }
   | { view: "meetups" }
   | { view: "admin" }
-  | { view: "course-editor"; courseId: string };
+  | { view: "course-editor"; courseId: string }
+  | { view: "verify"; certId?: string }
+  | { view: "legal"; type: string };
 
 export interface Toast {
   id: string;
@@ -54,11 +56,11 @@ interface StoreCtx {
   register: (name: string, email: string, password: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   loginDemo: () => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   enroll: (courseId: string) => Promise<void>;
   isEnrolled: (courseId: string) => boolean;
-  completeLesson: (courseId: string, lessonId: string) => Promise<void>;
-  submitQuiz: (courseId: string, score: number, total: number) => Promise<boolean>;
+  completeLesson: (courseId: string, lessonId: string) => Promise<any>;
+  submitQuiz: (courseId: string, score: number, total: number) => Promise<any>;
   linkTelegram: (initData?: string) => Promise<void>;
   unlinkTelegram: () => Promise<void>;
 }
@@ -73,18 +75,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // ✅ UPDATED: Rely entirely on HttpOnly cookies for session validation
   useEffect(() => {
-    const token = localStorage.getItem("tigerslair.token");
-    if (token) {
-      api.getMe().then(res => {
+    api.getMe()
+      .then((res) => {
         setUser(res.data);
         fetchEnrollments();
-      }).catch(() => {
-        clearToken();
-      }).finally(() => setIsLoading(false));
-    } else {
-      setIsLoading(false);
-    }
+      })
+      .catch(() => {
+        // If getMe fails, the session is invalid or missing. Clear cookies just in case.
+        clearSession();
+      })
+      .finally(() => setIsLoading(false));
   }, []);
 
   const fetchEnrollments = async () => {
@@ -113,6 +115,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setUser(res.data);
       toast("Welcome to the Lair, " + name.split(" ")[0]);
       setAuthOpen(false);
+      fetchEnrollments();
     } catch (e: any) {
       toast(e.message || "Registration failed");
     }
@@ -133,9 +136,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const loginDemo = useCallback(async () => {
     try {
       const res = await api.loginDemo();
-      if (res.token) {
-        localStorage.setItem("tigerslair.token", res.token);
-      }
       setUser(res.data);
       toast("Demo student loaded — meet Ada");
       setAuthOpen(false);
@@ -145,12 +145,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [toast]);
 
-  const logout = useCallback(() => {
-    clearToken();
-    setUser(null);
-    setEnrollments([]);
-    toast("Signed out — progress stays safe in your browser");
-    go({ view: "home" });
+  const logout = useCallback(async () => {
+    try {
+      await api.logout();
+    } catch (e) {
+      // Ignore logout errors (e.g., network drop), we still want to clear local state
+    } finally {
+      clearSession();
+      setUser(null);
+      setEnrollments([]);
+      toast("Signed out");
+      go({ view: "home" });
+    }
   }, [toast, go]);
 
   const enroll = useCallback(async (courseId: string) => {
@@ -167,15 +173,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return enrollments.some((e) => e.course_id === courseId);
   }, [enrollments]);
 
+  // ✅ UPDATED: Return the API response so components can access `res.awarded`
   const completeLesson = useCallback(async (courseId: string, lessonId: string) => {
     try {
-      await api.completeLesson(courseId, lessonId);
+      const res = await api.completeLesson(courseId, lessonId);
       toast("Lesson marked complete");
+      return res;
     } catch (e: any) {
       toast(e.message || "Failed to complete lesson");
+      throw e;
     }
   }, [toast]);
 
+  // ✅ UPDATED: Return the API response so components can access `res.awarded`
   const submitQuiz = useCallback(async (courseId: string, score: number, total: number) => {
     try {
       const res = await api.submitQuiz(courseId, score, total);
@@ -184,10 +194,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       } else {
         toast(score + "/" + total + " — you need 70% to pass. Review and retry");
       }
-      return res.passed;
+      return res;
     } catch (e: any) {
       toast(e.message || "Failed to submit quiz");
-      return false;
+      throw e;
     }
   }, [toast]);
 
@@ -198,7 +208,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         res = await api.linkTelegramMiniApp(initData);
         toast("Telegram linked securely via Mini App!");
       } else {
-        const tgId = '78' + String(Math.floor(1000000 + Math.random() * 8999999));
         res = await api.linkTelegram();
         toast("Telegram linked!");
       }

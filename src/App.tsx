@@ -12,7 +12,7 @@ import Meetups from "./views/Meetups";
 import AdminPanel from "./views/AdminPanel";
 import CourseEditor from "./views/CourseEditor";
 import LegalPage from "./views/LegalPage";
-import VerifyCertificate from "./views/VerifyCertificate"; // ✅ NEW
+import VerifyCertificate from "./views/VerifyCertificate";
 import { AuthModal } from "./components/Modals";
 import { IconClaw, IconMenu, IconX, IconPlane } from "./components/Icons";
 import CookieConsent from "./components/CookieConsent";
@@ -238,7 +238,7 @@ function Footer() {
                 </button>
               </li>
             ))}
-            {/* ✅ NEW: Certificate Verification Link */}
+            {/* Certificate Verification Link */}
             <li className="pt-2 mt-2 border-t border-bone/5">
               <button 
                 onClick={() => go({ view: "verify" } as any)} 
@@ -291,7 +291,7 @@ function Toasts() {
 function Shell() {
   const { route, authOpen, go } = useStore();
 
-  // ✅ NEW: support share links like https://yoursite/?verify=TL-PY101-483920
+  // Support share links like https://yoursite/?verify=TL-PY101-483920
   useEffect(() => {
     const v = new URLSearchParams(window.location.search).get("verify");
     if (v) go({ view: "verify", certId: v } as any);
@@ -315,7 +315,7 @@ function Shell() {
         {route.view === "admin" && <AdminPanel />}
         {route.view === "course-editor" && <CourseEditor courseId={route.courseId} />}
         
-        {/* ✅ NEW: Certificate Verification & Legal Pages Routing */}
+        {/* Certificate Verification & Legal Pages Routing */}
         {route.view === "verify" && <VerifyCertificate certId={route.certId as string | undefined} />}
         {route.view === "legal" && <LegalPage type={route.type as any} />}
       </main>
