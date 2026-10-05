@@ -64,6 +64,7 @@ export default function CourseEditor() {
         price: Number(course.price) || 0,
         price_usd: Number(course.price_usd) || 0,
         weeks: Number(course.weeks) || 0,
+        category: course.category || 'General', // ✅ Ensure category is passed
         outcomes: typeof course.outcomes === 'string' ? course.outcomes.split('\n').filter((o: string) => o.trim()) : course.outcomes,
         skills: typeof course.skills === 'string' ? course.skills.split(',').map((s: string) => s.trim()) : course.skills
       };
@@ -77,7 +78,6 @@ export default function CourseEditor() {
     }
   };
 
-  // ✅ FIXED: no client-side orderIndex — server appends to the end
   const handleAddModule = async () => {
     const title = prompt("Enter module title:");
     if (title && courseId) {
@@ -91,7 +91,6 @@ export default function CourseEditor() {
     }
   };
 
-  // ✅ NEW: Rename module
   const handleRenameModule = async (moduleId: string, current: string) => {
     const title = prompt("Rename module:", current);
     if (!title || title === current) return;
@@ -104,7 +103,6 @@ export default function CourseEditor() {
     }
   };
 
-  // ✅ NEW: Delete module (cascades to units + their resources via backend)
   const handleDeleteModule = async (moduleId: string, title: string) => {
     if (!confirm(`Delete module "${title}"? This will also delete ALL its units and their resources.`)) return;
     try {
@@ -116,7 +114,6 @@ export default function CourseEditor() {
     }
   };
 
-  // ✅ FIXED: no client-side orderIndex
   const handleAddUnit = async (moduleId: string) => {
     const title = prompt("Enter unit title:");
     if (title && courseId) {
@@ -136,7 +133,6 @@ export default function CourseEditor() {
     }
   };
 
-  // ✅ NEW: Delete unit (backend cascades resources + completions)
   const handleDeleteUnit = async (unitId: string, title: string) => {
     if (!confirm(`Delete unit "${title}"? Its resources will also be deleted.`)) return;
     try {
@@ -209,32 +205,119 @@ export default function CourseEditor() {
       <div className="rounded-xl border border-bone/10 bg-coal p-6 mb-8">
         <h2 className="font-display text-xl font-bold text-amber mb-4">Course Settings & Pricing</h2>
         <div className="grid gap-4 md:grid-cols-2 mb-4">
-          <input placeholder="Course Code" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone" value={course.code || ''} onChange={e => setCourse({ ...course, code: e.target.value })} />
-          <input placeholder="Title" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone" value={course.title || ''} onChange={e => setCourse({ ...course, title: e.target.value })} />
-          <input placeholder="Tagline" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone md:col-span-2" value={course.tagline || ''} onChange={e => setCourse({ ...course, tagline: e.target.value })} />
-          <select className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone" value={course.level || 'Beginner'} onChange={e => setCourse({ ...course, level: e.target.value })}>
+          <input 
+            placeholder="Course Code" 
+            className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone" 
+            value={course.code || ''} 
+            onChange={e => setCourse({ ...course, code: e.target.value })} 
+          />
+          
+          {/* ✅ NEW: Category Dropdown */}
+          <select 
+            className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone" 
+            value={course.category || 'General'} 
+            onChange={e => setCourse({ ...course, category: e.target.value })}
+          >
+            <option value="General">General</option>
+            <option value="Programming">Programming</option>
+            <option value="Design">Design</option>
+            <option value="Business">Business</option>
+            <option value="Data Science">Data Science</option>
+            <option value="Marketing">Marketing</option>
+            <option value="Kingdom Righteousness">Kingdom Righteousness</option>
+            <option value="Personal Development">Personal Development</option>
+          </select>
+
+          <input 
+            placeholder="Title" 
+            className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone md:col-span-2" 
+            value={course.title || ''} 
+            onChange={e => setCourse({ ...course, title: e.target.value })} 
+          />
+          <input 
+            placeholder="Tagline" 
+            className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone md:col-span-2" 
+            value={course.tagline || ''} 
+            onChange={e => setCourse({ ...course, tagline: e.target.value })} 
+          />
+          
+          <select 
+            className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone" 
+            value={course.level || 'Beginner'} 
+            onChange={e => setCourse({ ...course, level: e.target.value })}
+          >
             <option>Beginner</option>
             <option>Intermediate</option>
             <option>Advanced</option>
           </select>
-          <input type="number" placeholder="Weeks" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone" value={course.weeks || 0} onChange={e => setCourse({ ...course, weeks: parseInt(e.target.value) || 0 })} />
+          
+          {/* ✅ NEW: Path Dropdown (was missing from UI but in DB schema) */}
+          <select 
+            className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone" 
+            value={course.path || 'Self-Paced'} 
+            onChange={e => setCourse({ ...course, path: e.target.value })}
+          >
+            <option>Self-Paced</option>
+            <option>Cohort-Based</option>
+            <option>Hybrid</option>
+          </select>
+
+          <input 
+            type="number" 
+            placeholder="Weeks" 
+            className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone" 
+            value={course.weeks || 0} 
+            onChange={e => setCourse({ ...course, weeks: parseInt(e.target.value) || 0 })} 
+          />
 
           <div className="grid grid-cols-2 gap-3 p-3 rounded-lg border border-amber/30 bg-amber/5 md:col-span-2">
             <div>
               <label className="text-[10px] font-bold uppercase text-amber block mb-1">Price (₦ NGN)</label>
-              <input type="number" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone" value={course.price || 0} onChange={e => setCourse({ ...course, price: parseInt(e.target.value) || 0 })} />
+              <input 
+                type="number" 
+                className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone" 
+                value={course.price || 0} 
+                onChange={e => setCourse({ ...course, price: parseInt(e.target.value) || 0 })} 
+              />
             </div>
             <div>
               <label className="text-[10px] font-bold uppercase text-amber block mb-1">Price ($ USD)</label>
-              <input type="number" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone" value={course.price_usd || 0} onChange={e => setCourse({ ...course, price_usd: parseInt(e.target.value) || 0 })} />
+              <input 
+                type="number" 
+                className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone" 
+                value={course.price_usd || 0} 
+                onChange={e => setCourse({ ...course, price_usd: parseInt(e.target.value) || 0 })} 
+              />
             </div>
           </div>
         </div>
 
-        <textarea placeholder="Summary" rows={3} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone mb-4" value={course.summary || ''} onChange={e => setCourse({ ...course, summary: e.target.value })} />
-        <textarea placeholder="Outcomes (one per line)" rows={3} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone mb-4" value={Array.isArray(course.outcomes) ? course.outcomes.join('\n') : (course.outcomes || '')} onChange={e => setCourse({ ...course, outcomes: e.target.value })} />
-        <input placeholder="Skills (comma separated)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone mb-4" value={Array.isArray(course.skills) ? course.skills.join(', ') : (course.skills || '')} onChange={e => setCourse({ ...course, skills: e.target.value })} />
-        <input placeholder="Telegram Channel" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone mb-4" value={course.channel || ''} onChange={e => setCourse({ ...course, channel: e.target.value })} />
+        <textarea 
+          placeholder="Summary" 
+          rows={3} 
+          className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone mb-4" 
+          value={course.summary || ''} 
+          onChange={e => setCourse({ ...course, summary: e.target.value })} 
+        />
+        <textarea 
+          placeholder="Outcomes (one per line)" 
+          rows={3} 
+          className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone mb-4" 
+          value={Array.isArray(course.outcomes) ? course.outcomes.join('\n') : (course.outcomes || '')} 
+          onChange={e => setCourse({ ...course, outcomes: e.target.value })} 
+        />
+        <input 
+          placeholder="Skills (comma separated)" 
+          className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone mb-4" 
+          value={Array.isArray(course.skills) ? course.skills.join(', ') : (course.skills || '')} 
+          onChange={e => setCourse({ ...course, skills: e.target.value })} 
+        />
+        <input 
+          placeholder="Telegram Channel" 
+          className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone mb-4" 
+          value={course.channel || ''} 
+          onChange={e => setCourse({ ...course, channel: e.target.value })} 
+        />
 
         <button
           onClick={handleSaveCourseDetails}
@@ -258,7 +341,6 @@ export default function CourseEditor() {
 
         {modules.map((module, mIdx) => (
           <div key={module.id} className="rounded-lg border border-bone/10 bg-coal">
-            {/* ✅ NEW: header split into expand button + action buttons */}
             <div className="flex items-center justify-between gap-3 p-4 hover:bg-ink/50">
               <button
                 className="flex flex-1 items-center gap-3 text-left"
@@ -296,7 +378,6 @@ export default function CourseEditor() {
                           <span className="text-xs font-mono text-smoke">Unit {uIdx + 1}.</span>
                           <span className="font-bold text-bone">{unit.title}</span>
                         </div>
-                        {/* ✅ NEW: unit delete button added */}
                         <div className="flex items-center gap-3">
                           <button
                             onClick={() => handleDeleteUnit(unit.id, unit.title)}

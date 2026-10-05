@@ -65,6 +65,17 @@ export const api = {
 
   getMe: () => request<{ data: any }>('/api/user/me'),
 
+  // ✅ NEW: Profile & Password Management
+  updateProfile: (data: { name: string; email: string }) =>
+    request<{ success: boolean }>('/api/user/me', {
+      method: 'PUT', body: JSON.stringify(data)
+    }),
+
+  changePassword: (data: { currentPassword: string; newPassword: string }) =>
+    request<{ success: boolean }>('/api/user/password', {
+      method: 'PUT', body: JSON.stringify(data)
+    }),
+
   enroll: (courseId: string) =>
     request<{ success: boolean }>('/api/enroll', {
       method: 'POST', body: JSON.stringify({ courseId })

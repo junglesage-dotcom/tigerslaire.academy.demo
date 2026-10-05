@@ -13,6 +13,8 @@ import AdminPanel from "./views/AdminPanel";
 import CourseEditor from "./views/CourseEditor";
 import LegalPage from "./views/LegalPage";
 import VerifyCertificate from "./views/VerifyCertificate";
+import Settings from "./views/Settings";
+import MobileBottomNav from "./components/MobileBottomNav"; // ✅ NEW: Mobile Nav Import
 import { AuthModal } from "./components/Modals";
 import { IconClaw, IconMenu, IconX, IconPlane } from "./components/Icons";
 import CookieConsent from "./components/CookieConsent";
@@ -53,7 +55,7 @@ function Nav() {
     { label: "Overview", active: route.view === "home", go: () => go({ view: "home" }) },
     { label: "Courses", active: route.view === "courses" || route.view === "course", go: () => go({ view: "courses" }) },
     { label: "Mentorshop", active: route.view === "mentorshop" || route.view === "mentorship-apply" || route.view === "mentorship-dashboard", go: () => go({ view: "mentorshop" }) },
-    { label: "Dashboard", active: route.view === "dashboard" || route.view === "mentorship-dashboard", go: () => go({ view: "dashboard" }) },
+    { label: "Dashboard", active: route.view === "dashboard" || route.view === "mentorship-dashboard" || route.view === "settings", go: () => go({ view: "dashboard" }) },
   ];
 
   if (user?.role === 'admin') {
@@ -167,7 +169,7 @@ function Footer() {
   const { go } = useStore();
 
   return (
-    <footer className="border-t border-bone/10 bg-[#120c05]">
+    <footer className="border-t border-bone/10 bg-[#120c05] pb-20 md:pb-16 pt-16">
       <div className="mx-auto grid max-w-7xl gap-12 px-5 py-16 sm:px-8 lg:grid-cols-12">
         {/* Brand & Location */}
         <div className="lg:col-span-4">
@@ -302,7 +304,9 @@ function Shell() {
       <div className="noise-layer" aria-hidden />
       <StatusStrip />
       <Nav />
-      <main>
+      
+      {/* ✅ UPDATED: Added pb-20 md:pb-0 so content isn't hidden behind the mobile bottom nav */}
+      <main className="pb-20 md:pb-0">
         {route.view === "home" && <Home />}
         {route.view === "courses" && <Catalog />}
         {route.view === "course" && <CourseDetail key={route.courseId} courseId={route.courseId} />}
@@ -314,15 +318,18 @@ function Shell() {
         {route.view === "meetups" && <Meetups />}
         {route.view === "admin" && <AdminPanel />}
         {route.view === "course-editor" && <CourseEditor courseId={route.courseId} />}
+        {route.view === "settings" && <Settings />}
         
         {/* Certificate Verification & Legal Pages Routing */}
         {route.view === "verify" && <VerifyCertificate certId={route.certId as string | undefined} />}
         {route.view === "legal" && <LegalPage type={route.type as any} />}
       </main>
+      
       <Footer />
       <Toasts />
       {authOpen && <AuthModal />}
       
+      <MobileBottomNav /> {/* ✅ NEW: Renders only on mobile */}
       <CookieConsent />
     </div>
   );

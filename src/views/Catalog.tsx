@@ -1,42 +1,71 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { api } from "../lib/api";
 import { useStore } from "../lib/store";
 import { IconClaw } from "../components/Icons";
 
+const CATEGORIES = [
+  "All",
+  "General",
+  "Programming",
+  "Design",
+  "Business",
+  "Data Science",
+  "Marketing",
+  "Kingdom Righteousness",
+  "Personal Development",
+];
+
 export default function Catalog() {
-  const { go, user, setAuthOpen, isEnrolled } = useStore();
+  const { go, user, toast, isEnrolled, enroll } = useStore();
   const [courses, setCourses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'Beginner' | 'Intermediate' | 'Advanced'>('all');
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("All");
 
   useEffect(() => {
-    api
-      .getCourses()
-      .then((res) => setCourses(res.data))
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    loadCourses();
   }, []);
 
-  const filteredCourses = courses.filter((c) => {
-    const matchesFilter = filter === 'all' || c.level === filter;
-    const matchesSearch = search === '' || 
-      c.title.toLowerCase().includes(search.toLowerCase()) ||
-      c.code.toLowerCase().includes(search.toLowerCase()) ||
-      c.tagline.toLowerCase().includes(search.toLowerCase());
-    return matchesFilter && matchesSearch;
-  });
+  const loadCourses = async () => {
+    try {
+      setLoading(true);
+      const res = await api.getCourses();
+      setCourses(res.data || []);
+    } catch (e: any) {
+      toast(e.message || "Failed to load courses");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const handleCourseClick = (courseId: string) => {
+  const filteredCourses = useMemo(() => {
+    return courses.filter((c) => {
+      // Handle legacy courses that might not have a category yet
+      const courseCat = c.category || "General";
+      const matchesCategory = selectedCategory === "All" || courseCat === selectedCategory;
+      
+      const searchLower = search.toLowerCase();
+      const matchesSearch = 
+        c.title.toLowerCase().includes(searchLower) || 
+        c.code.toLowerCase().includes(searchLower) ||
+        (c.tagline && c.tagline.toLowerCase().includes(searchLower));
+        
+      return matchesCategory && matchesSearch;
+    });
+  }, [courses, search, selectedCategory]);
+
+  const handleViewCourse = (courseId: string) => {
     go({ view: "course", courseId });
   };
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-7xl px-5 py-16 text-center sm:px-8">
-        <div className="inline-flex items-center gap-3 rounded-lg border border-bone/10 bg-coal px-6 py-4">
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-amber border-t-transparent" />
-          <p className="font-mono text-sm uppercase tracking-widest text-amber">Loading courses...</p>
+      <div className="mx-auto max-w-7xl px-5 py-12 sm:px-8">
+        <div className="mb-8 h-10 w-48 animate-pulse rounded bg-bone/10" />
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="h-72 animate-pulse rounded-xl border border-bone/10 bg-coal" />
+          ))}
         </div>
       </div>
     );
@@ -45,104 +74,115 @@ export default function Catalog() {
   return (
     <div className="mx-auto max-w-7xl px-5 py-12 sm:px-8">
       {/* Header */}
-      <div className="mb-10">
-        <div className="mb-2 flex items-center gap-2">
-          <span className="h-1 w-8 bg-amber" />
-          <span className="font-mono text-xs uppercase tracking-[0.3em] text-amber">Course Catalog</span>
-        </div>
-        <h1 className="font-display text-4xl font-extrabold tracking-tight text-bone sm:text-5xl">
-          All Tracks in One Den
-        </h1>
-        <p className="mt-4 max-w-2xl text-lg text-smoke">
-          Practical courses built around real-world problems. Every lesson drops into your private Telegram channel, and the website tracks what you finish.
+      <div className="mb-8">
+        <h1 className="font-display text-3xl font-extrabold text-bone">Course Catalog</h1>
+        <p className="mt-2 text-sm text-smoke">
+          Explore our curated learning paths. Master new skills and join the Lair.
         </p>
       </div>
 
       {/* Filters */}
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap gap-2">
-          {['all', 'Beginner', 'Intermediate', 'Advanced'].map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`rounded-md px-4 py-2 font-display text-xs font-bold uppercase tracking-widest transition-colors ${filter === f ? 'bg-amber text-ink' : 'border border-bone/10 text-smoke hover:border-amber hover:text-amber'}`}
-            >
-              {f === 'all' ? 'All Levels' : f}
-            </button>
-          ))}
-        </div>
-        <div className="relative">
+        <div className="relative flex-1 max-w-md">
           <input
             type="text"
-            placeholder="Search courses..."
+            placeholder="Search by title or code..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-md border border-bone/10 bg-ink py-2 pl-10 pr-4 text-sm text-bone placeholder:text-smoke/50 focus:border-amber focus:outline-none sm:w-64"
+            className="w-full rounded-lg border border-bone/15 bg-coal px-4 py-2.5 pl-10 text-sm text-bone placeholder:text-smoke/50 focus:border-amber focus:outline-none transition-colors"
           />
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-smoke">🔍</span>
+          <IconClaw className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-smoke/50" />
         </div>
+        
+        <select
+          value={selectedCategory}
+          onChange={(e) => setSelectedCategory(e.target.value)}
+          className="rounded-lg border border-bone/15 bg-coal px-4 py-2.5 text-sm text-bone focus:border-amber focus:outline-none transition-colors sm:w-56"
+        >
+          {CATEGORIES.map((cat) => (
+            <option key={cat} value={cat}>
+              {cat === "All" ? "All Categories" : cat}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Course Grid */}
       {filteredCourses.length === 0 ? (
-        <div className="rounded-lg border border-bone/10 bg-coal p-12 text-center">
-          <p className="text-lg text-bone mb-2">No courses found</p>
-          <p className="text-sm text-smoke">Try adjusting your filters or search term.</p>
+        <div className="rounded-xl border border-dashed border-bone/15 bg-coal/50 p-12 text-center">
+          <p className="font-display text-xl font-bold text-smoke">No courses found</p>
+          <p className="mt-2 text-sm text-smoke/70">Try adjusting your search or category filter.</p>
         </div>
       ) : (
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {filteredCourses.map((course) => {
-            const enrolled = user ? isEnrolled(course.id) : false;
+            const enrolled = isEnrolled(course.id);
+            const courseCat = course.category || "General";
+            
             return (
               <div
                 key={course.id}
-                onClick={() => handleCourseClick(course.id)}
-                className="card-lift group relative cursor-pointer overflow-hidden rounded-xl border border-bone/10 bg-coal"
+                className="group flex flex-col rounded-xl border border-bone/10 bg-coal transition-all hover:border-amber/30 hover:shadow-[0_8px_30px_-12px_rgba(255,164,27,0.15)]"
               >
-                {/* Color Accent Bar */}
-                <div className="h-1.5 w-full" style={{ backgroundColor: course.hue }} />
+                {/* Card Header / Badge Area */}
+                <div className="flex items-start justify-between p-5 pb-0">
+                  <span 
+                    className="rounded-md px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider"
+                    style={{ backgroundColor: `${course.hue}20`, color: course.hue }}
+                  >
+                    {courseCat}
+                  </span>
+                  <span className="rounded-md bg-bone/5 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-bone">
+                    {course.level}
+                  </span>
+                </div>
 
-                <div className="p-6">
-                  {/* Header */}
-                  <div className="mb-4 flex items-start justify-between">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-lg text-ink transition-transform group-hover:scale-110" style={{ backgroundColor: course.hue }}>
-                      <IconClaw className="h-6 w-6" />
-                    </div>
-                    <div className="text-right">
-                      <span className="rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider" style={{ backgroundColor: course.hue + '20', color: course.hue }}>
-                        {course.code}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Title & Tagline */}
-                  <h3 className="mb-2 font-display text-xl font-bold text-bone group-hover:text-amber transition-colors">
+                {/* Card Body */}
+                <div className="flex flex-1 flex-col p-5 pt-3">
+                  <p className="font-mono text-xs uppercase tracking-widest text-smoke mb-1">
+                    {course.code}
+                  </p>
+                  <h3 className="font-display text-xl font-bold text-bone mb-2 line-clamp-2 group-hover:text-amber transition-colors">
                     {course.title}
                   </h3>
-                  <p className="mb-4 text-sm text-smoke line-clamp-2">{course.tagline}</p>
+                  <p className="text-sm text-smoke line-clamp-2 mb-4 flex-1">
+                    {course.tagline || course.summary}
+                  </p>
 
-                  {/* Stats */}
-                  <div className="mb-4 flex flex-wrap gap-2 text-xs">
-                    <span className="rounded bg-bone/5 px-2 py-1 text-bone">{course.level}</span>
-                    <span className="rounded bg-bone/5 px-2 py-1 text-bone">{course.weeks} weeks</span>
-                    {enrolled && (
-                      <span className="rounded bg-mint/20 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-mint">
-                        ✓ Enrolled
-                      </span>
-                    )}
+                  {/* Meta Info */}
+                  <div className="flex flex-wrap items-center gap-4 text-xs text-smoke mb-5">
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-amber">📅</span> {course.weeks} weeks
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-amber">📚</span> {course.path}
+                    </span>
                   </div>
 
-                  {/* Footer */}
-                  <div className="flex items-center justify-between border-t border-bone/10 pt-4">
+                  {/* Card Footer */}
+                  <div className="mt-auto flex items-center justify-between border-t border-bone/10 pt-4">
                     <div>
-                      <p className="font-mono text-[10px] uppercase tracking-widest text-smoke">Price</p>
-                      <p className="font-display text-lg font-bold" style={{ color: course.hue }}>
-                        ₦{course.price?.toLocaleString()}
+                      <p className="text-[10px] uppercase tracking-widest text-smoke">Price</p>
+                      <p className="font-display text-lg font-bold text-bone">
+                        ₦{Number(course.price || 0).toLocaleString()}
                       </p>
                     </div>
-                    <span className="flex items-center gap-1 text-xs font-bold uppercase tracking-widest text-amber opacity-0 transition-opacity group-hover:opacity-100">
-                      View <span>→</span>
-                    </span>
+                    
+                    {enrolled ? (
+                      <button
+                        onClick={() => handleViewCourse(course.id)}
+                        className="rounded-md bg-mint/20 px-4 py-2 text-xs font-bold uppercase tracking-widest text-mint hover:bg-mint/30 transition-colors"
+                      >
+                        Continue
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleViewCourse(course.id)}
+                        className="stripe-btn rounded-md bg-amber px-4 py-2 text-xs font-bold uppercase tracking-widest text-ink transition-transform hover:-translate-y-0.5"
+                      >
+                        View Course
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -150,23 +190,6 @@ export default function Catalog() {
           })}
         </div>
       )}
-
-      {/* Bottom CTA */}
-      <div className="mt-16 rounded-2xl border border-bone/10 bg-gradient-to-br from-coal to-ink p-8 text-center">
-        <p className="font-mono text-xs uppercase tracking-[0.3em] text-amber mb-3">Need guidance?</p>
-        <h2 className="font-display text-2xl font-bold text-bone mb-3">
-          Explore the Mentorshop
-        </h2>
-        <p className="text-smoke mb-6 max-w-xl mx-auto">
-          1-on-1 mentorship in Tech, Life Skills, Digital Therapy, and Life Coaching. Tailored to your pace and goals.
-        </p>
-        <button
-          onClick={() => go({ view: "mentorshop" })}
-          className="stripe-btn rounded-md bg-amber px-8 py-3 font-display text-sm font-extrabold uppercase tracking-widest text-ink"
-        >
-          Visit Mentorshop →
-        </button>
-      </div>
     </div>
   );
 }
