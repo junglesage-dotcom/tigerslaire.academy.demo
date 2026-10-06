@@ -64,7 +64,7 @@ export default function CourseEditor() {
         price: Number(course.price) || 0,
         price_usd: Number(course.price_usd) || 0,
         weeks: Number(course.weeks) || 0,
-        category: course.category || 'General', // ✅ Ensure category is passed
+        category: course.category || 'General',
         outcomes: typeof course.outcomes === 'string' ? course.outcomes.split('\n').filter((o: string) => o.trim()) : course.outcomes,
         skills: typeof course.skills === 'string' ? course.skills.split(',').map((s: string) => s.trim()) : course.skills
       };
@@ -114,22 +114,68 @@ export default function CourseEditor() {
     }
   };
 
+  // ✅ UPDATED: Now prompts for an optional unlock date
   const handleAddUnit = async (moduleId: string) => {
     const title = prompt("Enter unit title:");
-    if (title && courseId) {
+    if (!title) return;
+    
+    const unlockDateStr = prompt("Unlock date (YYYY-MM-DD HH:MM) or leave blank for immediate:");
+    let unlockDate = null;
+    if (unlockDateStr && unlockDateStr.trim() !== '') {
+      const parsed = new Date(unlockDateStr.trim()).getTime();
+      if (isNaN(parsed)) {
+        toast("Invalid date format. Unit created without unlock date.");
+      } else {
+        unlockDate = parsed;
+      }
+    }
+
+    if (courseId) {
       try {
         await api.addLesson(courseId, {
           moduleId,
           title,
           minutes: 0,
           tags: [],
-          bullets: []
+          bullets: [],
+          unlockDate // ✅ NEW: Pass the unlock date to the API
         });
         toast("Unit added");
         loadCourse();
       } catch (e: any) {
         toast(e.message || "Failed to add unit");
       }
+    }
+  };
+
+  // ✅ NEW: Edit existing unit title and unlock date
+  const handleEditUnit = async (unitId: string, currentTitle: string, currentUnlockDate: number | null) => {
+    const title = prompt("Rename unit:", currentTitle);
+    if (!title || title === currentTitle) return;
+
+    const currentStr = currentUnlockDate ? new Date(currentUnlockDate).toISOString().slice(0, 16).replace('T', ' ') : '';
+    const unlockDateStr = prompt("Unlock date (YYYY-MM-DD HH:MM) or leave blank to remove lock:", currentStr);
+    
+    let unlockDate: number | null = null;
+    if (unlockDateStr !== null) { // User didn't cancel the prompt
+      if (unlockDateStr.trim() === '') {
+        unlockDate = null; // Remove the lock
+      } else {
+        const parsed = new Date(unlockDateStr.trim()).getTime();
+        if (isNaN(parsed)) {
+          toast("Invalid date format. Unlock date not changed.");
+          return;
+        }
+        unlockDate = parsed;
+      }
+    }
+
+    try {
+      await api.updateLesson(unitId, { title, unlock_date: unlockDate });
+      toast("Unit updated");
+      loadCourse();
+    } catch (e: any) {
+      toast(e.message || "Failed to update unit");
     }
   };
 
@@ -153,6 +199,21 @@ export default function CourseEditor() {
       } catch (e: any) {
         toast(e.message || "Failed to delete");
       }
+    }
+  };
+
+  // ✅ NEW: Add Assignment to a Unit
+  const handleAddAssignment = async (lessonId: string) => {
+    const title = prompt("Enter assignment title:");
+    if (!title) return;
+    const description = prompt("Enter assignment instructions/description:") || "";
+    
+    try {
+      await api.createAssignment(lessonId, { title, description });
+      toast("Assignment added to unit!");
+      loadCourse(); // Refresh to show the new assignment in resources list if needed
+    } catch (e: any) {
+      toast(e.message || "Failed to add assignment");
     }
   };
 
@@ -212,7 +273,6 @@ export default function CourseEditor() {
             onChange={e => setCourse({ ...course, code: e.target.value })} 
           />
           
-          {/* ✅ NEW: Category Dropdown */}
           <select 
             className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone" 
             value={course.category || 'General'} 
@@ -251,7 +311,6 @@ export default function CourseEditor() {
             <option>Advanced</option>
           </select>
           
-          {/* ✅ NEW: Path Dropdown (was missing from UI but in DB schema) */}
           <select 
             className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone" 
             value={course.path || 'Self-Paced'} 
@@ -379,6 +438,13 @@ export default function CourseEditor() {
                           <span className="font-bold text-bone">{unit.title}</span>
                         </div>
                         <div className="flex items-center gap-3">
+                          {/* ✅ NEW: Edit button added */}
+                          <button
+                            onClick={() => handleEditUnit(unit.id, unit.title, unit.unlock_date)}
+                            className="text-xs font-bold text-tgsky hover:underline"
+                          >
+                            Edit
+                          </button>
                           <button
                             onClick={() => handleDeleteUnit(unit.id, unit.title)}
                             className="text-xs font-bold text-alert hover:underline"
@@ -416,6 +482,17 @@ export default function CourseEditor() {
                               </div>
                             ))}
                           </div>
+                          
+                          {/* ✅ NEW: Add Assignment Button */}
+                          <div className="pt-2 border-t border-bone/10">
+                             <button
+                                onClick={() => handleAddAssignment(unit.id)}
+                                className="w-full rounded-md border border-dashed border-amber/30 bg-amber/5 py-2 text-xs font-bold uppercase tracking-widest text-amber hover:bg-amber/10 transition-colors"
+                              >
+                                + Add Assignment to Unit
+                              </button>
+                          </div>
+
                           <UnitResourceAdder courseId={courseId!} unitId={unit.id} onAdded={loadCourse} />
                         </div>
                       )}

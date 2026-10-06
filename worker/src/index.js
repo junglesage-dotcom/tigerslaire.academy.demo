@@ -1,4 +1,5 @@
 // worker/src/index.js
+import { handleMessage, handleCallback } from './bot';
 
 // ============================================
 // HELPER FUNCTIONS
@@ -21,19 +22,34 @@ async function verifyTelegramInitData(initData, botToken) {
   } catch (e) { return false; }
 }
 
+// ✅ UPDATED: Enhanced Video/Resource Link Handling
 function getEmbedUrl(url, type) {
   if (!url) return null;
+  
+  // 1. YouTube Handling
   const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\s?]+)/);
   if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}?rel=0&modestbranding=1`;
+  
+  // 2. Vimeo Handling
   const vimeoMatch = url.match(/vimeo\.com\/(\d+)/);
   if (vimeoMatch) return `https://player.vimeo.com/video/${vimeoMatch[1]}`;
+  
+  // 3. Google Drive Handling
   if (url.includes('drive.google.com')) {
     const driveMatch = url.match(/\/file\/d\/([^/]+)/);
     if (driveMatch) return `https://docs.google.com/viewer?url=https://drive.google.com/uc?id=${driveMatch[1]}&embedded=true`;
   }
+
+  // 4. Direct Video Files (MP4/WebM) - Return as 'direct' so frontend knows to use <video> tag
+  if (type === 'video' && (url.endsWith('.mp4') || url.endsWith('.webm') || url.endsWith('.mov'))) {
+    return 'direct'; 
+  }
+  
+  // 5. PDF Documents
   if (type === 'document' && url.endsWith('.pdf')) {
     return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
   }
+  
   return url;
 }
 
@@ -169,316 +185,6 @@ async function evaluateBadges(env, userId, courseId) {
 }
 
 // ============================================
-// TELEGRAM BOT LOGIC (INLINED)
-// ============================================
-const tgApi = (env, method, body) =>
-  fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }).then((r) => r.json());
-
-const sendMsg = (env, chat_id, text, extra = {}) =>
-  tgApi(env, 'sendMessage', { chat_id, text, parse_mode: 'Markdown', disable_web_page_preview: true, ...extra });
-
-const getMiniAppUrl = (env) => env.MINI_APP_URL || `https://t.me/${env.BOT_USERNAME || 'jsagebutlerbot'}/app`;
-const getSiteUrl = (env) => env.SITE_URL || 'https://tigerslair.academy';
-
-const HELP_TEXT = [
-  "🐯 *Tiger's Lair Academy Bot*",
-  '',
-  '/app — Launch the Academy Mini App',
-  '/mycourses — Your courses & progress',
-  '/channel <CODE> — Invite link to a course channel',
-  '/proof <REF> — Submit a bank-transfer proof',
-  '/status — Account & payment status',
-  '/help — This message',
-].join('\n');
-
-function normalizeChat(value) {
-  const s = String(value || '').trim();
-  if (!s) return null;
-  if (/^-?\d/.test(s)) return s;
-  const clean = s.replace(/^https?:\/\//, '').replace(/^t\.me\//, '').replace(/^@/, '');
-  return '@' + clean;
-}
-
-const userByTg = (env, telegramId) =>
-  env.DB.prepare('SELECT * FROM users WHERE telegram_id = ?').bind(String(telegramId)).first();
-
-async function isAdminActor(env, cb) {
-  const chatId = String(cb?.message?.chat?.id || '');
-  if (env.ADMIN_CHANNEL_ID && chatId === String(env.ADMIN_CHANNEL_ID)) return true;
-  const ids = String(env.ADMIN_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
-  return ids.includes(String(cb?.from?.id || ''));
-}
-
-async function notifyUser(env, userId, text) {
-  const user = await env.DB.prepare('SELECT telegram_id FROM users WHERE id = ?').bind(userId).first();
-  if (user && user.telegram_id) await sendMsg(env, user.telegram_id, text);
-}
-
-async function handleTelegramUpdate(request, env) {
-  const secret = request.headers.get('x-telegram-bot-api-secret-token');
-  if (env.TG_WEBHOOK_SECRET && secret !== env.TG_WEBHOOK_SECRET) return new Response('Unauthorized', { status: 403 });
-  const update = await request.json();
-  try {
-    if (update.callback_query) await handleCallback(update.callback_query, env);
-    else if (update.message) await handleMessage(update.message, env);
-  } catch (e) {
-    console.error('Bot update error:', e);
-  }
-  return new Response('ok');
-}
-
-async function handleMessage(msg, env) {
-  const chatId = msg.chat.id;
-  if (msg.chat.type !== 'private') return;
-
-  if (msg.photo && msg.photo.length) {
-    const session = await env.DB.prepare('SELECT * FROM bot_sessions WHERE telegram_id = ?').bind(String(chatId)).first();
-    if (!session) return sendMsg(env, chatId, 'No pending proof request. Use /proof <REFERENCE> first, or tap "Upload Proof" from your dashboard.');
-    const photo = msg.photo[msg.photo.length - 1];
-    return forwardProof(env, session, photo.file_id);
-  }
-
-  const text = (msg.text || '').trim();
-  if (!text) return;
-
-  if (text === '/start' || text.startsWith('/start ')) {
-    return handleStart(env, chatId, text.replace('/start', '').trim());
-  }
-
-  const cmd = text.split(' ')[0];
-  if (cmd === '/app' || cmd === '/launch') {
-    return sendMsg(env, chatId, "🚀 Tiger's Lair Academy — learn, track progress, get certified.", {
-      reply_markup: { inline_keyboard: [
-        [{ text: '🚀 Launch Academy App', web_app: { url: getMiniAppUrl(env) } }],
-        [{ text: '🌐 Open Website', url: getSiteUrl(env) }],
-      ] },
-    });
-  }
-  if (cmd === '/mycourses') return myCourses(env, chatId);
-  if (cmd === '/channel' || cmd === '/group') return channelByCode(env, chatId, text.split(' ')[1] || '');
-  if (cmd === '/proof') {
-    const ref = text.split(' ')[1];
-    if (!ref) return sendMsg(env, chatId, 'Usage: /proof <PAYMENT-REFERENCE>');
-    return startProofSession(env, chatId, ref);
-  }
-  if (cmd === '/status') return status(env, chatId);
-  return sendMsg(env, chatId, HELP_TEXT, {
-    reply_markup: { inline_keyboard: [
-      [{ text: '🚀 Launch App', web_app: { url: getMiniAppUrl(env) } }],
-      [{ text: '📚 My Courses', callback_data: 'nav:mycourses' }],
-      [{ text: '🔗 Link Website Account', url: `${getSiteUrl(env)}/?link=1` }],
-    ] },
-  });
-}
-
-async function handleStart(env, chatId, payload) {
-  if (!payload) {
-    return sendMsg(env, chatId, "Welcome to the Tiger's Lair Academy Bot! 🐯\nUse /help to see everything I can do.", {
-      reply_markup: { inline_keyboard: [
-        [{ text: '🚀 Launch Academy App', web_app: { url: getMiniAppUrl(env) } }],
-        [{ text: '📚 My Courses', callback_data: 'nav:mycourses' }],
-        [{ text: '🔗 Link Website Account', url: `${getSiteUrl(env)}/?link=1` }],
-      ] },
-    });
-  }
-  if (payload.startsWith('link_')) {
-    const userId = payload.slice(5);
-    const user = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(userId).first();
-    if (!user) return sendMsg(env, chatId, 'Account not found. Start the link again from your dashboard.');
-    await env.DB.prepare('UPDATE users SET telegram_id = ? WHERE id = ?').bind(String(chatId), userId).run();
-    return sendMsg(env, chatId, `✅ Linked! Welcome, ${user.name}. You'll now receive lesson drops, reminders and payment updates here.`);
-  }
-  if (payload.startsWith('chan_')) return channelById(env, chatId, payload.slice(5));
-  if (payload.startsWith('INST_PROOF_')) return startProofSession(env, chatId, payload.slice(11));
-  if (payload.startsWith('PROOF_')) return startProofSession(env, chatId, payload.slice(6));
-  if (payload.startsWith('INST_')) return startProofSession(env, chatId, payload.slice(5));
-  return sendMsg(env, chatId, HELP_TEXT);
-}
-
-async function startProofSession(env, chatId, reference) {
-  const payment = await env.DB.prepare('SELECT * FROM payments WHERE reference = ?').bind(reference).first();
-  const installment = !payment ? await env.DB.prepare('SELECT * FROM installments WHERE id = ?').bind(reference).first() : null;
-  if (!payment && !installment) return sendMsg(env, chatId, `Reference "${reference}" not found. Check your dashboard for the exact reference.`);
-  const userId = payment ? payment.user_id : installment.user_id;
-
-  await env.DB.prepare('INSERT OR REPLACE INTO bot_sessions (telegram_id, user_id, purpose, reference, created_at) VALUES (?, ?, ?, ?, ?)')
-    .bind(String(chatId), userId, payment ? 'payment' : 'installment', reference, Date.now()).run();
-  if (payment) await env.DB.prepare("UPDATE payments SET status = 'proof_submitted' WHERE reference = ? AND status = 'pending'").bind(reference).run();
-  if (installment) await env.DB.prepare("UPDATE installments SET status = 'proof_submitted' WHERE id = ? AND status = 'pending'").bind(reference).run();
-
-  return sendMsg(env, chatId, '📸 Proof request opened.\nNow send the PHOTO of your payment receipt here (as a photo, not a file).');
-}
-
-async function forwardProof(env, session, fileId) {
-  const chatId = session.telegram_id;
-  let caption = '';
-  let keyboard = [];
-
-  if (session.purpose === 'payment') {
-    const row = await env.DB.prepare(`SELECT p.*, u.name, u.email, c.title AS course_title FROM payments p JOIN users u ON u.id = p.user_id LEFT JOIN courses c ON c.id = p.course_id WHERE p.reference = ?`).bind(session.reference).first();
-    if (!row) return sendMsg(env, chatId, 'Payment reference expired. Use /proof <REF> again.');
-    caption = [
-      '🧾 PAYMENT PROOF — FULL',
-      `Student: ${row.name} (${row.user_id})`,
-      `Email: ${row.email}`,
-      `Reference: ${row.reference}`,
-      `Amount: ${row.currency === 'USD' ? '$' : '₦'}${Number(row.amount).toLocaleString()}`,
-      `Course: ${row.course_title || 'Mentorship'}`,
-      `Plan: ${row.payment_plan || 'full'}`,
-      '',
-      'Approve to enroll the student.',
-    ].join('\n');
-    keyboard = [[{ text: '✅ Approve', callback_data: `payA:${row.reference}` }, { text: '❌ Reject', callback_data: `payR:${row.reference}` }]];
-  } else {
-    const row = await env.DB.prepare(`SELECT i.*, u.name, u.email, c.title AS course_title FROM installments i JOIN users u ON u.id = i.user_id LEFT JOIN courses c ON c.id = i.course_id WHERE i.id = ?`).bind(session.reference).first();
-    if (!row) return sendMsg(env, chatId, 'Installment reference expired. Use /proof <REF> again.');
-    caption = [
-      '🧾 PAYMENT PROOF — INSTALLMENT',
-      `Student: ${row.name} (${row.user_id})`,
-      `Email: ${row.email}`,
-      `Installment: ${row.id}`,
-      `Amount: ₦${Number(row.amount).toLocaleString()}`,
-      `Course: ${row.course_title || 'Course'}`,
-      '',
-      'Approve to mark this installment paid.',
-    ].join('\n');
-    keyboard = [[{ text: '✅ Approve', callback_data: `instA:${row.id}` }, { text: '❌ Reject', callback_data: `instR:${row.id}` }]];
-  }
-
-  if (!env.ADMIN_CHANNEL_ID) return sendMsg(env, chatId, 'Admin channel not configured. Contact support.');
-  await tgApi(env, 'sendPhoto', { chat_id: env.ADMIN_CHANNEL_ID, photo: fileId, caption, reply_markup: { inline_keyboard: keyboard } });
-  await env.DB.prepare('DELETE FROM bot_sessions WHERE telegram_id = ?').bind(String(chatId)).run();
-  return sendMsg(env, chatId, "✅ Proof forwarded to the admin team. You'll get a notification here once it's approved.");
-}
-
-async function channelByCode(env, chatId, code) {
-  const course = await env.DB.prepare('SELECT * FROM courses WHERE UPPER(code) = UPPER(?)').bind(code).first();
-  if (!course) return sendMsg(env, chatId, `No course found with code "${code}". Use /mycourses to see your courses.`);
-  return channelById(env, chatId, course.id);
-}
-
-async function channelById(env, chatId, courseId, cb) {
-  const user = await userByTg(env, chatId);
-  if (!user) return sendMsg(env, chatId, 'Link your account first from the website dashboard.');
-  const enrolled = await env.DB.prepare('SELECT 1 AS ok FROM enrollments WHERE user_id = ? AND course_id = ?').bind(user.id, courseId).first();
-  if (!enrolled) return sendMsg(env, chatId, "🔒 You're not enrolled in this course, so I can't share its private channel.");
-  const course = await env.DB.prepare('SELECT * FROM courses WHERE id = ?').bind(courseId).first();
-  const chat = normalizeChat(course.channel);
-  if (!chat) return sendMsg(env, chatId, "This course doesn't have a Telegram channel configured yet.");
-  const link = await tgApi(env, 'createChatInviteLink', {
-    chat_id: chat,
-    member_limit: 1,
-    expire_date: Math.floor(Date.now() / 1000) + 3600,
-    name: `${user.name} — ${course.code}`,
-  });
-  if (!link.ok) return sendMsg(env, chatId, `Couldn't create an invite (${link.description}). Is the bot an admin of the channel with invite rights?`);
-  const text = `🔑 One-time invite to ${course.code} channel (valid 1 hour, 1 use):\n${link.result.invite_link}`;
-  if (cb) return tgApi(env, 'editMessageText', { chat_id: cb.message.chat.id, message_id: cb.message.message_id, text });
-  return sendMsg(env, chatId, text);
-}
-
-async function myCourses(env, chatId, cb) {
-  const user = await userByTg(env, chatId);
-  if (!user) return sendMsg(env, chatId, "Your Telegram isn't linked to a student account. Open the dashboard and tap \"Link Telegram\".", {
-    reply_markup: { inline_keyboard: [[{ text: '🔗 Link Account', url: `${getSiteUrl(env)}/?link=1` }]] },
-  });
-  const rows = await env.DB.prepare(`SELECT c.id, c.code, c.title, c.channel, e.quiz_passed,
-      (SELECT COUNT(*) FROM lessons l WHERE l.course_id = c.id) AS total,
-      (SELECT COUNT(*) FROM lesson_completions lc JOIN lessons l ON l.id = lc.lesson_id WHERE l.course_id = c.id AND lc.user_id = ?) AS done
-    FROM enrollments e JOIN courses c ON c.id = e.course_id WHERE e.user_id = ? ORDER BY e.enrolled_at DESC`).bind(user.id, user.id).all();
-  if (!rows.results.length) return sendMsg(env, chatId, "You haven't enrolled in any course yet. Browse the catalogue in the app.");
-  const lines = rows.results.map((r, i) => {
-    const pct = r.total ? Math.round((r.done / r.total) * 100) : 0;
-    return `${i + 1}. ${r.code} — ${r.title}\n   Progress: ${r.done}/${r.total} lessons (${pct}%)${r.quiz_passed ? ' · ✅ Completed' : ''}`;
-  });
-  const keyboard = rows.results.map((r) => [
-    { text: `📖 ${r.code} — Open`, web_app: { url: `${getMiniAppUrl(env)}?startapp=course_${r.id}` } },
-    ...(r.channel ? [{ text: '🔑 Channel', callback_data: `chan:${r.id}` }] : []),
-  ]);
-  const text = '📚 Your courses:\n\n' + lines.join('\n\n');
-  if (cb) return tgApi(env, 'editMessageText', { chat_id: cb.message.chat.id, message_id: cb.message.message_id, text, reply_markup: { inline_keyboard: keyboard } });
-  return sendMsg(env, chatId, text, { reply_markup: { inline_keyboard: keyboard } });
-}
-
-async function status(env, chatId) {
-  const user = await userByTg(env, chatId);
-  if (!user) return sendMsg(env, chatId, 'Not linked. Open the website dashboard and tap "Link Telegram".');
-  const enrolled = await env.DB.prepare('SELECT COUNT(*) AS n FROM enrollments WHERE user_id = ?').bind(user.id).first();
-  const due = await env.DB.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(amount),0) AS sum FROM installments WHERE user_id = ? AND status = 'pending' AND due_date <= ?").bind(user.id, Date.now()).first();
-  const pendingProofs = await env.DB.prepare("SELECT COUNT(*) AS n FROM payments WHERE user_id = ? AND status = 'proof_submitted'").bind(user.id).first();
-  return sendMsg(env, chatId, [
-    `👤 ${user.name} (${user.role})`,
-    `📚 Enrolled courses: ${enrolled.n}`,
-    `🧾 Proofs awaiting approval: ${pendingProofs.n}`,
-    due.n ? `⚠️ Due installments: ${due.n} (₦${Number(due.sum).toLocaleString()})` : '✅ No overdue installments',
-  ].join('\n'));
-}
-
-async function handleCallback(cb, env) {
-  const data = cb.data || '';
-  const fromId = cb.from.id;
-
-  if (data === 'nav:mycourses') { await tgApi(env, 'answerCallbackQuery', { callback_query_id: cb.id }); return myCourses(env, fromId, cb); }
-  if (data.startsWith('chan:')) { await tgApi(env, 'answerCallbackQuery', { callback_query_id: cb.id }); return channelById(env, fromId, data.slice(5), cb); }
-
-  if (data.startsWith('payA:') || data.startsWith('payR:') || data.startsWith('instA:') || data.startsWith('instR:')) {
-    if (!(await isAdminActor(env, cb))) {
-      return tgApi(env, 'answerCallbackQuery', { callback_query_id: cb.id, text: 'Admins only', show_alert: true });
-    }
-    await tgApi(env, 'answerCallbackQuery', { callback_query_id: cb.id });
-    const approve = data[3] === 'A';
-    const ref = data.slice(4);
-    const resultText = data.startsWith('pay')
-      ? await settlePayment(env, ref, approve, cb.from.first_name)
-      : await settleInstallment(env, ref, approve, cb.from.first_name);
-    return tgApi(env, 'editMessageText', { chat_id: cb.message.chat.id, message_id: cb.message.message_id, text: resultText });
-  }
-  return tgApi(env, 'answerCallbackQuery', { callback_query_id: cb.id });
-}
-
-async function settlePayment(env, reference, approve, adminName) {
-  const payment = await env.DB.prepare('SELECT * FROM payments WHERE reference = ?').bind(reference).first();
-  if (!payment) return `Payment ${reference} not found.`;
-  if (payment.status === 'paid') return `Payment ${reference} was already approved.`;
-  if (approve) {
-    await env.DB.prepare("UPDATE payments SET status = 'paid', updated_at = ? WHERE id = ?").bind(Date.now(), payment.id).run();
-    if (payment.course_id) await env.DB.prepare('INSERT OR IGNORE INTO enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, ?)').bind(payment.user_id, payment.course_id, Date.now()).run();
-    
-    await evaluateBadges(env, payment.user_id, payment.course_id);
-    
-    await notifyUser(env, payment.user_id, `✅ Your payment (${reference}) was approved by ${adminName}. You're enrolled — open the app to start learning!`);
-    return `✅ APPROVED by ${adminName}\nPayment: ${reference}\nStudent enrolled.`;
-  }
-  await env.DB.prepare("UPDATE payments SET status = 'rejected', updated_at = ? WHERE id = ?").bind(Date.now(), payment.id).run();
-  await notifyUser(env, payment.user_id, `❌ Your payment proof (${reference}) was rejected. Please re-upload a clearer receipt or contact support.`);
-  return `❌ REJECTED by ${adminName}\nPayment: ${reference}`;
-}
-
-async function settleInstallment(env, installmentId, approve, adminName) {
-  const inst = await env.DB.prepare('SELECT * FROM installments WHERE id = ?').bind(installmentId).first();
-  if (!inst) return `Installment ${installmentId} not found.`;
-  if (inst.status === 'paid') return `Installment ${installmentId} was already approved.`;
-  if (approve) {
-    await env.DB.prepare("UPDATE installments SET status = 'paid' WHERE id = ?").bind(installmentId).run();
-    if (inst.course_id) await env.DB.prepare('INSERT OR IGNORE INTO enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, ?)').bind(inst.user_id, inst.course_id, Date.now()).run();
-    const remaining = await env.DB.prepare("SELECT COUNT(*) AS n FROM installments WHERE payment_id = ? AND status != 'paid'").bind(inst.payment_id).first();
-    if (remaining.n === 0) await env.DB.prepare("UPDATE payments SET status = 'paid', updated_at = ? WHERE id = ?").bind(Date.now(), inst.payment_id).run();
-    
-    await evaluateBadges(env, inst.user_id, inst.course_id);
-    
-    await notifyUser(env, inst.user_id, `✅ Installment (${inst.id}) approved by ${adminName}. ${remaining.n === 0 ? 'Plan fully paid — thank you!' : 'Keep learning — next due date applies.'}`);
-    return `✅ APPROVED by ${adminName}\nInstallment: ${inst.id}\nRemaining: ${remaining.n}`;
-  }
-  await env.DB.prepare("UPDATE installments SET status = 'rejected' WHERE id = ?").bind(installmentId).run();
-  await notifyUser(env, inst.user_id, `❌ Your installment proof (${inst.id}) was rejected. Re-upload a clearer receipt or contact support.`);
-  return `❌ REJECTED by ${adminName}\nInstallment: ${inst.id}`;
-}
-
-// ============================================
 // MAIN WORKER EXPORT
 // ============================================
 export default {
@@ -531,7 +237,17 @@ export default {
       // TELEGRAM BOT WEBHOOK + SETUP
       // ============================================
       if (path === '/api/telegram/webhook' && method === 'POST') {
-        return handleTelegramUpdate(request, env);
+        const secret = request.headers.get('x-telegram-bot-api-secret-token');
+        if (env.TG_WEBHOOK_SECRET && secret !== env.TG_WEBHOOK_SECRET) return new Response('Unauthorized', { status: 403 });
+        
+        const update = await request.json();
+        try {
+          if (update.callback_query) await handleCallback(update.callback_query, env);
+          else if (update.message) await handleMessage(update.message, env);
+        } catch (e) {
+          console.error('Bot update error:', e);
+        }
+        return new Response('ok');
       }
 
       if (path === '/api/telegram/setup-webhook' && method === 'POST') {
@@ -540,17 +256,26 @@ export default {
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
         const webhookUrl = `${url.origin}/api/telegram/webhook`;
         const appUrl = env.MINI_APP_URL || `https://t.me/${env.BOT_USERNAME || 'jsagebutlerbot'}/app`;
-        const setWebhook = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/setWebhook`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: webhookUrl, secret_token: env.TG_WEBHOOK_SECRET || '', drop_pending_updates: true, allowed_updates: ['message', 'callback_query'] }) }).then(r => r.json());
-        const setCommands = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/setMyCommands`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ commands: [
+        
+        // We need tgApi here for setup, so we define it locally or import it. 
+        // For simplicity, let's keep a local helper for setup since it's admin-only.
+        const tgApiLocal = (method, body) =>
+          fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          }).then((r) => r.json());
+
+        const setWebhook = await tgApiLocal('setWebhook', { url: webhookUrl, secret_token: env.TG_WEBHOOK_SECRET || '', drop_pending_updates: true, allowed_updates: ['message', 'callback_query'] });
+        const setCommands = await tgApiLocal('setMyCommands', { commands: [
           { command: 'start', description: 'Start & main menu' },
-          { command: 'app', description: 'Launch the Academy Mini App' },
           { command: 'mycourses', description: 'My courses & progress' },
           { command: 'channel', description: 'Course channel invite (/channel CODE)' },
           { command: 'proof', description: 'Send bank-transfer proof (/proof REF)' },
+          { command: 'submit', description: 'Submit an assignment (/submit ID)' },
           { command: 'status', description: 'My account status' },
-          { command: 'help', description: 'Help & commands' },
-        ] }) }).then(r => r.json());
-        const setMenu = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/setChatMenuButton`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ menu_button: { type: 'web_app', text: 'Launch Academy', web_app: { url: appUrl } } }) }).then(r => r.json());
+        ] });
+        const setMenu = await tgApiLocal('setChatMenuButton', { menu_button: { type: 'web_app', text: 'Launch Academy', web_app: { url: appUrl } } });
         return json({ setWebhook, setCommands, setMenu });
       }
 
@@ -929,6 +654,13 @@ export default {
         const token = getToken();
         if (!token) return error('Unauthorized', 401);
         const { lessonId, courseId } = await request.json();
+        
+        // ✅ NEW: Check if lesson is locked
+        const lesson = await env.DB.prepare('SELECT unlock_date FROM lessons WHERE id = ?').bind(lessonId).first();
+        if (lesson && lesson.unlock_date && lesson.unlock_date > Date.now()) {
+          return error('This lesson is locked until ' + new Date(lesson.unlock_date).toLocaleDateString(), 403);
+        }
+
         try {
           await env.DB.prepare('INSERT INTO lesson_completions (user_id, lesson_id, completed_at) VALUES (?, ?, ?)').bind(token, lessonId, Date.now()).run();
           
@@ -1262,10 +994,12 @@ export default {
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
         const courseId = parts[3];
-        const { id, moduleId, title, minutes, tags, bullets, msg, youtubeUrl } = await request.json();
+        // ✅ UPDATED: Added unlockDate to destructuring
+        const { id, moduleId, title, minutes, tags, bullets, msg, youtubeUrl, unlockDate } = await request.json();
         const lessonId = id || 'les_' + uid();
         const next = await env.DB.prepare('SELECT COALESCE(MAX(order_index), -1) + 1 AS n FROM lessons WHERE module_id = ?').bind(moduleId).first();
-        await env.DB.prepare(`INSERT INTO lessons (id, module_id, course_id, title, minutes, tags, bullets, msg, youtube_url, order_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(lessonId, moduleId, courseId, title, minutes, JSON.stringify(tags || []), JSON.stringify(bullets || []), msg || 0, youtubeUrl || null, next.n).run();
+        // ✅ UPDATED: Added unlock_date to INSERT statement
+        await env.DB.prepare(`INSERT INTO lessons (id, module_id, course_id, title, minutes, tags, bullets, msg, youtube_url, order_index, unlock_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(lessonId, moduleId, courseId, title, minutes, JSON.stringify(tags || []), JSON.stringify(bullets || []), msg || 0, youtubeUrl || null, next.n, unlockDate || null).run();
         await logAudit(env, token, 'LESSON_CREATED', `Created lesson in course ID: ${courseId}`);
 
         try {
@@ -1273,7 +1007,16 @@ export default {
           if (course && course.channel) {
             const raw = course.channel.trim();
             const target = /^@/.test(raw) || /^-?\d/.test(raw) ? raw : '@' + raw.replace(/^https?:\/\//, '').replace(/^t\.me\//, '');
-            await tgApi(env, 'sendMessage', {
+            
+            // Local tgApi for lesson drops
+            const tgApiLocal = (method, body) =>
+              fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+              }).then((r) => r.json());
+
+            await tgApiLocal('sendMessage', {
               chat_id: target,
               parse_mode: 'Markdown',
               disable_web_page_preview: true,
@@ -1294,7 +1037,8 @@ export default {
         const fields = []; const values = [];
         for (const [key, val] of Object.entries(data)) {
           if (['tags', 'bullets'].includes(key)) { fields.push(`${key} = ?`); values.push(JSON.stringify(val)); } 
-          else if (['title', 'minutes', 'module_id', 'msg', 'youtube_url', 'order_index'].includes(key)) { fields.push(`${key} = ?`); values.push(val); }
+          // ✅ UPDATED: Added unlock_date to allowed fields
+          else if (['title', 'minutes', 'module_id', 'msg', 'youtube_url', 'order_index', 'unlock_date'].includes(key)) { fields.push(`${key} = ?`); values.push(val); }
         }
         if (fields.length > 0) { values.push(lessonId); await env.DB.prepare(`UPDATE lessons SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run(); }
         await logAudit(env, token, 'LESSON_UPDATED', `Updated lesson ID: ${lessonId}`);
@@ -1602,6 +1346,56 @@ export default {
           next_offset: offset + batchSize,
           finished: enrollments.results.length < batchSize
         });
+      }
+
+      // ============================================
+      // ASSIGNMENTS API
+      // ============================================
+      
+      // Admin: Create Assignment
+      if (path.match(/\/api\/admin\/lessons\/[^/]+\/assignment/) && method === 'POST') {
+        const token = getToken();
+        const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
+        if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
+        
+        const lessonId = parts[3];
+        const { title, description } = await request.json();
+        const id = 'assign_' + uid();
+        
+        await env.DB.prepare('INSERT INTO assignments (id, lesson_id, title, description, created_at) VALUES (?, ?, ?, ?, ?)').bind(id, lessonId, title, description, Date.now()).run();
+        return json({ data: { id } });
+      }
+
+      // Student: Submit Assignment (Web)
+      if (path.match(/\/api\/assignments\/[^/]+\/submit/) && method === 'POST') {
+        const token = getToken();
+        if (!token) return error('Unauthorized', 401);
+        
+        const assignmentId = parts[2];
+        const { content, fileUrl } = await request.json();
+        const id = 'sub_' + uid();
+        
+        await env.DB.prepare('INSERT INTO submissions (id, assignment_id, user_id, content, file_url, submitted_at) VALUES (?, ?, ?, ?, ?, ?)').bind(id, assignmentId, token, content, fileUrl, Date.now()).run();
+        
+        // Optional: Notify Admin via Bot
+        const assign = await env.DB.prepare('SELECT * FROM assignments WHERE id = ?').bind(assignmentId).first();
+        const user = await env.DB.prepare('SELECT name FROM users WHERE id = ?').bind(token).first();
+        if (assign && env.ADMIN_CHANNEL_ID) {
+           const tgApiLocal = (method, body) =>
+            fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            }).then((r) => r.json());
+           
+           await tgApiLocal('sendMessage', { 
+             chat_id: env.ADMIN_CHANNEL_ID, 
+             text: `📝 *New Web Submission*\nStudent: ${user.name}\nAssignment: ${assign.title}\nContent: ${content || 'File attached'}`,
+             parse_mode: 'Markdown'
+           });
+        }
+        
+        return json({ success: true });
       }
 
       return error('Not found', 404);

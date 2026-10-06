@@ -302,4 +302,27 @@ export const api = {
 
   // ✅ NEW: Badges API
   getMyBadges: () => request<{ data: { badge_id: string; earned_at: number }[] }>('/api/badges/mine'),
+
+  // ✅ NEW: Lesson Notes API
+  getCourseNotes: (courseId: string) => 
+    request<{ data: { id: string; lesson_id: string; lesson_title: string; note_text: string; updated_at: number }[] }>(`/api/courses/${courseId}/notes`),
+  
+  saveLessonNote: (lessonId: string, note_text: string) =>
+    request<{ success: boolean }>(`/api/lessons/${lessonId}/notes`, {
+      method: 'PUT', body: JSON.stringify({ note_text })
+    }),
+    
+  deleteLessonNote: (lessonId: string) =>
+    request<{ success: boolean }>(`/api/lessons/${lessonId}/notes`, { method: 'DELETE' }),
+
+  // ✅ NEW: Assignments & Submissions API
+  createAssignment: (lessonId: string, data: any) =>
+    request<{ data: any }>(`/api/admin/lessons/${lessonId}/assignment`, {
+      method: 'POST', body: JSON.stringify(data)
+    }),
+    
+  submitAssignment: (assignmentId: string, data: any) =>
+    request<{ success: boolean }>(`/api/assignments/${assignmentId}/submit`, {
+      method: 'POST', body: JSON.stringify(data)
+    }),
 };

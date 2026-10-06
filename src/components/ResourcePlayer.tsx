@@ -84,7 +84,36 @@ function YouTubeRenderer({ resource }: { resource: Resource }) {
   );
 }
 
+// ✅ NEW: Renderer for direct MP4/WebM files from R2 or other sources
+function DirectVideoRenderer({ resource }: { resource: Resource }) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-bone/10 bg-ink">
+      <video
+        src={resource.source_url}
+        poster={resource.thumbnail_url}
+        controls
+        className="w-full aspect-video bg-black"
+      >
+        Your browser does not support the video tag.
+      </video>
+      <div className="p-3">
+        <p className="text-sm font-bold text-bone">{resource.title}</p>
+        <div className="mt-1 flex items-center gap-3 text-xs text-smoke">
+          {resource.duration_seconds && <span>⏱ {formatDuration(resource.duration_seconds)}</span>}
+          {resource.file_size_bytes && <span>💾 {formatFileSize(resource.file_size_bytes)}</span>}
+        </div>
+        {resource.description && <p className="mt-1 text-xs text-smoke">{resource.description}</p>}
+      </div>
+    </div>
+  );
+}
+
 function VideoRenderer({ resource }: { resource: Resource }) {
+  // If the source_url is 'direct', use the new renderer
+  if (resource.source_url === 'direct') {
+    return <DirectVideoRenderer resource={resource} />;
+  }
+  
   return (
     <div className="overflow-hidden rounded-lg border border-bone/10 bg-ink">
       <video
