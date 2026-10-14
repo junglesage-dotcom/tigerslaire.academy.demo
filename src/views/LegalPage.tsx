@@ -57,7 +57,7 @@ const LEGAL_DOCS = {
       <p>Due to the immediate digital access provided upon enrollment, Tiger's Lair Academy operates with a strict but fair refund policy.</p>
 
       <h3>2. Standard Refund Window</h3>
-      <p>Refund requests are accepted within <strong>48 hours</strong> of initial enrollment, provided that <strong>less than 20%</strong> of the course material has been accessed or marked as complete.</p>
+      <p>Refund requests are accepted within <strong>24 hours</strong> of initial enrollment, provided that <strong>less than 5%</strong> of the course material has been accessed or marked as complete.</p>
 
       <h3>3. Installment Plans</h3>
       <p>If you are on a bank-transfer installment plan, failure to upload valid payment proof by your due date will result in the temporary suspension of your access to course materials and the private Telegram channel. No refunds are issued for partial installment payments already approved.</p>
@@ -94,7 +94,7 @@ const LEGAL_DOCS = {
       <p>All sensitive data is encrypted in transit using TLS 1.3 and at rest using industry-standard hashing algorithms. Our infrastructure is hosted on secure, enterprise-grade Cloudflare servers.</p>
 
       <h3>3. Data Protection Officer (DPO)</h3>
-      <p>We have appointed a Data Protection Officer to oversee compliance. If you have concerns about how your data is handled, or wish to exercise your "Right to be Forgotten," please contact our DPO directly at <strong>privacy@tigerslair.academy</strong>.</p>
+      <p>We have in place Data Protection Protocol as a structure over compliance. If you have concerns about how your data is handled, or wish to exercise your "Right to be Forgotten," please contact us directly thrugh the bot or at <strong>privacy@tigerslair.academy</strong>.</p>
 
       <h3>4. Cross-Border Transfers</h3>
       <p>For international students, data may be processed on secure servers outside of Nigeria. We ensure that all third-party processors adhere to strict data protection agreements equivalent to NDPR standards.</p>

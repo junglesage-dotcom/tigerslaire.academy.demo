@@ -3,7 +3,7 @@ import { useState } from 'react';
 const LEGAL_CONTENT = {
   privacy: "Tiger's Lair Academy respects your privacy. We collect only the data necessary to provide our educational services...",
   terms: "By accessing Tiger's Lair Academy, you agree to abide by our community guidelines and intellectual property policies...",
-  refund: "Due to the digital nature of our courses, refunds are only processed within 48 hours of enrollment if less than 20% of the course has been accessed...",
+  refund: "Due to the digital nature of our courses, refunds are only processed within 48 hours of enrollment if less than 5% of the course has been accessed...",
 };
 
 export default function LegalModal({ type, onClose }: { type: keyof typeof LEGAL_CONTENT | null, onClose: () => void }) {
