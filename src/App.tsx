@@ -19,6 +19,9 @@ import { AuthModal } from "./components/Modals";
 import { IconClaw, IconMenu, IconX, IconPlane } from "./components/Icons";
 import CookieConsent from "./components/CookieConsent";
 
+// 👇 NEW: Import the background image
+import clawBg from "./assets/images/claw.png";
+
 // ============================================
 // STATUS STRIP
 // ============================================
@@ -32,7 +35,7 @@ function StatusStrip() {
   const m = String(Math.floor((secs % 3600) / 60)).padStart(2, "0");
   const s = String(secs % 60).padStart(2, "0");
   return (
-    <div className="border-b border-bone/10 bg-[#120c05]">
+    <div className="border-b border-bone/10 bg-[#120c05]/95 backdrop-blur-sm">
       <div className="mx-auto flex max-w-7xl items-center gap-5 overflow-hidden px-5 py-1.5 font-mono text-[9.5px] uppercase tracking-[0.16em] text-smoke sm:px-8">
         <span className="shrink-0 text-amber">lair-edge v2.0</span>
         <span className="hidden items-center gap-1.5 sm:flex">
@@ -169,7 +172,7 @@ function Footer() {
   const { go } = useStore();
 
   return (
-    <footer className="border-t border-bone/10 bg-[#120c05] pb-20 md:pb-16 pt-16">
+    <footer className="border-t border-bone/10 bg-[#120c05]/95 backdrop-blur-sm pb-20 md:pb-16 pt-16">
       <div className="mx-auto grid max-w-7xl gap-12 px-5 py-16 sm:px-8 lg:grid-cols-12">
         {/* Brand & Location */}
         <div className="lg:col-span-4">
@@ -300,36 +303,55 @@ function Shell() {
   }, [go]);
 
   return (
+    // ✅ FIXED: Added the missing closing quote for className
     <div className="relative min-h-screen">
-      <div className="noise-layer" aria-hidden />
-      <StatusStrip />
-      <Nav />
       
-      {/* ✅ UPDATED: Added pb-20 md:pb-0 so content isn't hidden behind the mobile bottom nav */}
-      <main className="pb-20 md:pb-0">
-        {route.view === "home" && <Home />}
-        {route.view === "courses" && <Catalog />}
-        {route.view === "course" && <CourseDetail key={route.courseId} courseId={route.courseId} />}
-        {route.view === "dashboard" && <Dashboard />}
-        {route.view === "mentorshop" && <Mentorshop />}
-        {route.view === "mentorship-apply" && <MentorshipApply />}
-        {route.view === "mentorship-dashboard" && <MentorshipDashboard />}
-        {route.view === "counseling" && <CounselingBook />}
-        {route.view === "meetups" && <Meetups />}
-        {route.view === "admin" && <AdminPanel />}
-        {route.view === "course-editor" && <CourseEditor courseId={route.courseId} />}
-        {route.view === "settings" && <Settings />}
+      {/* 🌟 GLOBAL BACKGROUND (Excluding Home Page) */}
+      {route.view !== "home" && (
+        <div className="fixed inset-0 z-0 pointer-events-none">
+          <div 
+            className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+            style={{ backgroundImage: `url(${clawBg})` }}
+          />
+          {/* Dark overlay to ensure text remains highly readable over the image */}
+          <div className="absolute inset-0 bg-coal/85" />
+        </div>
+      )}
+
+      {/* 🌟 MAIN CONTENT WRAPPER (z-10 to sit above the background) */}
+      <div className="relative z-10 flex flex-col min-h-screen">
+        <div className="noise-layer" aria-hidden />
+        <StatusStrip />
+        <Nav />
         
-        {/* Certificate Verification & Legal Pages Routing */}
-        {route.view === "verify" && <VerifyCertificate certId={route.certId as string | undefined} />}
-        {route.view === "legal" && <LegalPage type={route.type as any} />}
-      </main>
-      
-      <Footer />
+        {/* ✅ Added flex-grow so the footer always pushes to the bottom */}
+        <main className="flex-grow pb-20 md:pb-0">
+          {route.view === "home" && <Home />}
+          {route.view === "courses" && <Catalog />}
+          {route.view === "course" && <CourseDetail key={route.courseId} courseId={route.courseId} />}
+          {route.view === "dashboard" && <Dashboard />}
+          {route.view === "mentorshop" && <Mentorshop />}
+          {route.view === "mentorship-apply" && <MentorshipApply />}
+          {route.view === "mentorship-dashboard" && <MentorshipDashboard />}
+          {route.view === "counseling" && <CounselingBook />}
+          {route.view === "meetups" && <Meetups />}
+          {route.view === "admin" && <AdminPanel />}
+          {route.view === "course-editor" && <CourseEditor courseId={route.courseId} />}
+          {route.view === "settings" && <Settings />}
+          
+          {/* Certificate Verification & Legal Pages Routing */}
+          {route.view === "verify" && <VerifyCertificate certId={route.certId as string | undefined} />}
+          {route.view === "legal" && <LegalPage type={route.type as any} />}
+        </main>
+        
+        <Footer />
+      </div>
+
+      {/* Elements that need to be on the very top */}
       <Toasts />
       {authOpen && <AuthModal />}
       
-      <MobileBottomNav /> {/* ✅ NEW: Renders only on mobile */}
+      <MobileBottomNav /> {/* ✅ Renders only on mobile */}
       <CookieConsent />
     </div>
   );

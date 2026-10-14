@@ -1,6 +1,12 @@
 import { useStore } from "../lib/store";
 import { IconClaw, IconPlane } from "../components/Icons";
 
+// Import your images here
+import heroBg from '../assets/images/hero-bg.png';
+import clawImage from '../assets/images/claw-image.png';
+import founderEhis from '../assets/images/founder-ehis.png';
+import clawBg from '../assets/images/claw.png'; // New image for Platform Highlights
+
 export default function Home() {
   const { go, setAuthOpen } = useStore();
 
@@ -11,8 +17,14 @@ export default function Home() {
   return (
     <div className="relative overflow-hidden">
       {/* Hero Section */}
-      <section className="relative pt-24 pb-32 px-5 sm:px-8">
-        <div className="mx-auto max-w-7xl text-center">
+      <section 
+        className="relative pt-24 pb-32 px-5 sm:px-8 bg-cover bg-center bg-no-repeat min-h-[80vh] flex items-center"
+        style={{ backgroundImage: `url(${heroBg})` }}
+      >
+        {/* Dark overlay to ensure text is readable over the image */}
+        <div className="absolute inset-0 bg-gradient-to-b from-coal/90 via-coal/70 to-coal/90 backdrop-blur-[2px]" />
+        
+        <div className="relative mx-auto max-w-7xl text-center w-full">
           <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-bone/10 bg-coal/50 px-4 py-1.5 backdrop-blur-sm">
             <span className="blink-dot h-1.5 w-1.5 rounded-full bg-mint" />
             <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-smoke">
@@ -20,11 +32,11 @@ export default function Home() {
             </span>
           </div>
           
-          <h1 className="font-display text-5xl font-extrabold tracking-tight text-bone sm:text-7xl lg:text-8xl">
+          <h1 className="font-display text-5xl font-extrabold tracking-tight text-bone sm:text-7xl lg:text-8xl drop-shadow-lg">
             Learn. Build. <span className="text-amber">Thrive.</span>
           </h1>
           
-          <p className="mx-auto mt-6 max-w-2xl text-lg text-smoke sm:text-xl">
+          <p className="mx-auto mt-6 max-w-2xl text-lg text-smoke sm:text-xl drop-shadow-md">
             An educational ecosystem combining practical courses, 1-on-1 mentorship, and digital therapy. 
             We do not just teach skills. We build resilient minds.
           </p>
@@ -32,13 +44,13 @@ export default function Home() {
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <button
               onClick={() => go({ view: "courses" })}
-              className="stripe-btn rounded-md bg-amber px-8 py-4 font-display text-sm font-extrabold uppercase tracking-widest text-ink transition-transform hover:-translate-y-0.5"
+              className="stripe-btn rounded-md bg-amber px-8 py-4 font-display text-sm font-extrabold uppercase tracking-widest text-ink transition-transform hover:-translate-y-0.5 shadow-lg"
             >
               Explore the Den
             </button>
             <button
               onClick={() => setAuthOpen(true)}
-              className="rounded-md border border-bone/20 px-8 py-4 font-display text-sm font-extrabold uppercase tracking-widest text-bone transition-colors hover:bg-bone/5"
+              className="rounded-md border border-bone/20 px-8 py-4 font-display text-sm font-extrabold uppercase tracking-widest text-bone transition-colors hover:bg-bone/5 backdrop-blur-sm"
             >
               Join the Lair
             </button>
@@ -103,8 +115,16 @@ export default function Home() {
       </section>
 
       {/* Why Pick the Lair */}
-      <section className="border-y border-bone/10 bg-[#120c05] py-24 px-5 sm:px-8">
-        <div className="mx-auto max-w-7xl">
+      <section className="relative border-y border-bone/10 bg-[#120c05] py-24 px-5 sm:px-8 overflow-hidden">
+        {/* Claw Image Background with low opacity */}
+        <div 
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-95 pointer-events-none"
+          style={{ backgroundImage: `url(${clawImage})` }}
+        />
+        {/* Overlay to ensure text remains readable */}
+        <div className="absolute inset-0 bg-[#120c05]/80" />
+        
+        <div className="relative mx-auto max-w-7xl">
           <div className="mb-16 text-center">
             <p className="font-mono text-xs uppercase tracking-[0.3em] text-amber mb-3">The Advantage</p>
             <h2 className="font-display text-4xl font-extrabold text-bone sm:text-5xl">Why Pick the Lair?</h2>
@@ -143,7 +163,7 @@ export default function Home() {
                 desc: "Complete your track, pass the gate quiz, and receive a verifiable certificate to showcase your new skills to employers or clients."
               }
             ].map((item) => (
-              <div key={item.title} className="rounded-xl border border-bone/10 bg-coal p-6">
+              <div key={item.title} className="rounded-xl border border-bone/10 bg-coal p-6 backdrop-blur-sm bg-coal/80">
                 <div className="mb-4 text-3xl">{item.icon}</div>
                 <h3 className="font-display text-lg font-bold text-bone">{item.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-smoke">{item.desc}</p>
@@ -157,9 +177,12 @@ export default function Home() {
       <section className="py-24 px-5 sm:px-8">
         <div className="mx-auto max-w-4xl text-center">
           <div className="mb-8 flex justify-center">
-            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-amber text-ink">
-              <IconClaw className="h-10 w-10" />
-            </div>
+            {/* Replaced IconClaw with Founder Image */}
+            <img 
+              src={founderEhis} 
+              alt="Ehis O. Ferguson, Founder of Tiger's Lair Academy" 
+              className="h-24 w-24 sm:h-32 sm:w-32 rounded-full object-cover border-4 border-amber/30 shadow-2xl"
+            />
           </div>
           <h2 className="font-display text-3xl font-extrabold text-bone sm:text-4xl">
             Built by a critical thinker who teaches, taught by great minds that build.
@@ -200,8 +223,14 @@ export default function Home() {
       </section>
 
       {/* Platform Highlights */}
-      <section className="py-24 px-5 sm:px-8">
-        <div className="mx-auto max-w-7xl">
+      <section 
+        className="relative py-24 px-5 sm:px-8 bg-cover bg-center bg-no-repeat"
+        style={{ backgroundImage: `url(${clawBg})` }}
+      >
+        {/* Dark overlay to ensure text and cards remain readable */}
+        <div className="absolute inset-0 bg-coal/90" />
+        
+        <div className="relative mx-auto max-w-7xl">
           <div className="mb-16 text-center">
             <p className="font-mono text-xs uppercase tracking-[0.3em] text-amber mb-3">The Ecosystem</p>
             <h2 className="font-display text-4xl font-extrabold text-bone sm:text-5xl">Platform Highlights</h2>
