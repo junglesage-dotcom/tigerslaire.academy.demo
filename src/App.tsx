@@ -304,7 +304,7 @@ function Shell() {
 
   return (
     // ✅ FIXED: Added the missing closing quote for className
-    <div className="relative min-h-screen">
+    <div className="relative min-h-[calc(var(--vh,1vh)*100)]">
       
       {/* 🌟 GLOBAL BACKGROUND (Excluding Home Page) */}
       {route.view !== "home" && (
