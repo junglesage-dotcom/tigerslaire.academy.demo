@@ -189,6 +189,9 @@ async function evaluateBadges(env, userId, courseId) {
 // ============================================
 export default {
   async fetch(request, env) {
+    // 👇 ADD THIS EXACT LINE RIGHT HERE TO CATCH ALL INCOMING REQUESTS
+    console.log("🚨🚨🚨 INCOMING REQUEST TO WORKER:", request.url, request.method);
+
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method;
