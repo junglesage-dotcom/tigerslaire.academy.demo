@@ -1,6 +1,6 @@
 // setup-webhook.mjs
 const BOT_TOKEN = "8954408184:AAEQ5fXqqQDvVa6IkXOqGKUPhdkCGB471Eo"; // Replace with your actual token
-const WORKER_URL = "https://tigerslair-api.ehisferguson.workers.dev/api/telegram/webhook"; // Replace with your actual worker URL
+const WORKER_URL = "https://tigerslair-api.ehisferguson.workers.dev/"; // Replace with your actual worker URL
 const SECRET_TOKEN = "Tigerslair-secret-webhook-119"; // Must match the TG_WEBHOOK_SECRET you just set
 
 async function setup() {
