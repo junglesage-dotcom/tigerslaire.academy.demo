@@ -47,6 +47,26 @@ async function notifyUser(env, userId, text) {
 }
 
 // ============================================
+// ACCESS RESTRICTION HELPER (Installment Logic)
+// ============================================
+async function checkAccessRestriction(env, userId, chatId) {
+  // Check if the user has ANY pending installment that is past its due date
+  const overdue = await env.DB.prepare(`
+    SELECT 1 FROM installments 
+    WHERE user_id = ? AND status = 'pending' AND due_date < ?
+  `).bind(userId, Date.now()).first();
+  
+  if (overdue) {
+    await sendMsg(env, chatId, 
+      "🔒 *Access Temporarily Paused*\n\nYou have an overdue installment. To continue accessing course materials, private channels, and assignments, please upload your payment proof via the web dashboard.\n\n[💳 Manage Installments](" + getSiteUrl(env) + "/dashboard)", 
+      { parse_mode: 'Markdown' }
+    );
+    return true; // Access is restricted
+  }
+  return false; // Access granted
+}
+
+// ============================================
 // ASSIGNMENT SUBMISSION LOGIC
 // ============================================
 async function startAssignmentSession(env, chatId, assignmentId) {
@@ -259,6 +279,10 @@ async function channelByCode(env, chatId, code) {
 async function channelById(env, chatId, courseId, cb) {
   const user = await userByTg(env, chatId);
   if (!user) return sendMsg(env, chatId, 'Link your account first from the website dashboard.');
+  
+  // 👇 ENFORCE RESTRICTION: Block channel access if overdue
+  if (await checkAccessRestriction(env, user.id, chatId)) return;
+
   const enrolled = await env.DB.prepare('SELECT 1 AS ok FROM enrollments WHERE user_id = ? AND course_id = ?').bind(user.id, courseId).first();
   if (!enrolled) return sendMsg(env, chatId, "🔒 You're not enrolled in this course, so I can't share its private channel.");
   const course = await env.DB.prepare('SELECT * FROM courses WHERE id = ?').bind(courseId).first();
@@ -284,6 +308,10 @@ async function myCourses(env, chatId, cb) {
   if (!user) return sendMsg(env, chatId, "Your Telegram isn't linked to a student account. Open the dashboard and tap \"Link Telegram\".", {
     reply_markup: { inline_keyboard: [[{ text: '🔗 Link Account', url: `${getSiteUrl(env)}/?link=1` }]] },
   });
+
+  // 👇 ENFORCE RESTRICTION: Block course list if overdue
+  if (await checkAccessRestriction(env, user.id, chatId)) return;
+
   const rows = await env.DB.prepare(`SELECT c.id, c.code, c.title, c.channel, e.quiz_passed,
       (SELECT COUNT(*) FROM lessons l WHERE l.course_id = c.id) AS total,
       (SELECT COUNT(*) FROM lesson_completions lc JOIN lessons l ON l.id = lc.lesson_id WHERE l.course_id = c.id AND lc.user_id = ?) AS done
@@ -305,15 +333,46 @@ async function myCourses(env, chatId, cb) {
 async function status(env, chatId) {
   const user = await userByTg(env, chatId);
   if (!user) return sendMsg(env, chatId, 'Not linked. Open the website dashboard and tap "Link Telegram".');
+  
+  const overdue = await env.DB.prepare(`SELECT 1 FROM installments WHERE user_id = ? AND status = 'pending' AND due_date < ?`).bind(user.id, Date.now()).first();
   const enrolled = await env.DB.prepare('SELECT COUNT(*) AS n FROM enrollments WHERE user_id = ?').bind(user.id).first();
   const due = await env.DB.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(amount),0) AS sum FROM installments WHERE user_id = ? AND status = 'pending' AND due_date <= ?").bind(user.id, Date.now()).first();
   const pendingProofs = await env.DB.prepare("SELECT COUNT(*) AS n FROM payments WHERE user_id = ? AND status = 'proof_submitted'").bind(user.id).first();
-  return sendMsg(env, chatId, [
-    `👤 ${user.name} (${user.role})`,
+
+  let text = [
+    `👤 *${user.name}* (${user.role})`,
     `📚 Enrolled courses: ${enrolled.n}`,
     `🧾 Proofs awaiting approval: ${pendingProofs.n}`,
     due.n ? `⚠️ Due installments: ${due.n} (₦${Number(due.sum).toLocaleString()})` : '✅ No overdue installments',
-  ].join('\n'));
+  ].join('\n');
+
+  // 💡 SMART RECOMMENDATION: Find the very next uncompleted lesson
+  const nextLesson = await env.DB.prepare(`
+    SELECT l.title, c.title as course, c.id as cid 
+    FROM lessons l 
+    JOIN modules m ON l.module_id = m.id 
+    JOIN courses c ON m.course_id = c.id 
+    JOIN enrollments e ON c.id = e.course_id 
+    LEFT JOIN lesson_completions lc ON l.id = lc.lesson_id AND lc.user_id = ?
+    WHERE e.user_id = ? AND lc.lesson_id IS NULL 
+    ORDER BY m.order_index ASC, l.order_index ASC 
+    LIMIT 1
+  `).bind(user.id, user.id).first();
+
+  if (nextLesson && !overdue) {
+    text += `\n\n💡 *Recommended Next Step:*\nContinue with *"${nextLesson.title}"* in ${nextLesson.course}.`;
+  } else if (overdue) {
+    text += `\n\n🔒 *Action Required:* Your access is paused until the overdue installment is cleared.`;
+  }
+
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: '📚 Continue Learning', web_app: { url: `${getMiniAppUrl(env)}?startapp=course_${nextLesson?.cid || ''}` } }],
+      [{ text: '💳 Upload Payment Proof', url: `${getSiteUrl(env)}/dashboard` }]
+    ]
+  };
+
+  return sendMsg(env, chatId, text, { reply_markup: keyboard });
 }
 
 // ============================================
@@ -348,7 +407,28 @@ async function settlePayment(env, reference, approve, adminName) {
   if (approve) {
     await env.DB.prepare("UPDATE payments SET status = 'paid', updated_at = ? WHERE id = ?").bind(Date.now(), payment.id).run();
     if (payment.course_id) await env.DB.prepare('INSERT OR IGNORE INTO enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, ?)').bind(payment.user_id, payment.course_id, Date.now()).run();
-    await notifyUser(env, payment.user_id, `✅ Your payment (${reference}) was approved by ${adminName}. You're enrolled — open the app to start learning!`);
+    
+    // 💡 NEW: Send channel invite link upon approval
+    if (payment.course_id) {
+      const course = await env.DB.prepare('SELECT channel FROM courses WHERE id = ?').bind(payment.course_id).first();
+      if (course && course.channel) {
+        const invite = await tgApi(env, 'createChatInviteLink', {
+          chat_id: normalizeChat(course.channel),
+          member_limit: 1,
+          expire_date: Math.floor(Date.now() / 1000) + 86400 // 24 hours to join
+        });
+        if (invite.ok) {
+          await notifyUser(env, payment.user_id, `✅ Your payment (${reference}) was approved by ${adminName}. You're enrolled!\n\n👉 [Join Private Course Channel](${invite.result.invite_link})`);
+        } else {
+          await notifyUser(env, payment.user_id, `✅ Your payment (${reference}) was approved by ${adminName}. You're enrolled — open the app to start learning!`);
+        }
+      } else {
+        await notifyUser(env, payment.user_id, `✅ Your payment (${reference}) was approved by ${adminName}. You're enrolled — open the app to start learning!`);
+      }
+    } else {
+      await notifyUser(env, payment.user_id, `✅ Your payment (${reference}) was approved by ${adminName}. You're enrolled — open the app to start learning!`);
+    }
+    
     return `✅ APPROVED by ${adminName}\nPayment: ${reference}\nStudent enrolled.`;
   }
   await env.DB.prepare("UPDATE payments SET status = 'rejected', updated_at = ? WHERE id = ?").bind(Date.now(), payment.id).run();
@@ -365,7 +445,28 @@ async function settleInstallment(env, installmentId, approve, adminName) {
     if (inst.course_id) await env.DB.prepare('INSERT OR IGNORE INTO enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, ?)').bind(inst.user_id, inst.course_id, Date.now()).run();
     const remaining = await env.DB.prepare("SELECT COUNT(*) AS n FROM installments WHERE payment_id = ? AND status != 'paid'").bind(inst.payment_id).first();
     if (remaining.n === 0) await env.DB.prepare("UPDATE payments SET status = 'paid', updated_at = ? WHERE id = ?").bind(Date.now(), inst.payment_id).run();
-    await notifyUser(env, inst.user_id, `✅ Installment (${inst.id}) approved by ${adminName}. ${remaining.n === 0 ? 'Plan fully paid — thank you!' : 'Keep learning — next due date applies.'}`);
+    
+    // 💡 NEW: Send channel invite link upon approval (as a reminder or first-time join)
+    if (inst.course_id) {
+      const course = await env.DB.prepare('SELECT channel FROM courses WHERE id = ?').bind(inst.course_id).first();
+      if (course && course.channel) {
+        const invite = await tgApi(env, 'createChatInviteLink', {
+          chat_id: normalizeChat(course.channel),
+          member_limit: 1,
+          expire_date: Math.floor(Date.now() / 1000) + 86400 // 24 hours to join
+        });
+        if (invite.ok) {
+          await notifyUser(env, inst.user_id, `✅ Installment (${inst.id}) approved by ${adminName}. ${remaining.n === 0 ? 'Plan fully paid — thank you!' : 'Keep learning — next due date applies.'}\n\n👉 [Join Private Course Channel](${invite.result.invite_link})`);
+        } else {
+          await notifyUser(env, inst.user_id, `✅ Installment (${inst.id}) approved by ${adminName}. ${remaining.n === 0 ? 'Plan fully paid — thank you!' : 'Keep learning — next due date applies.'}`);
+        }
+      } else {
+        await notifyUser(env, inst.user_id, `✅ Installment (${inst.id}) approved by ${adminName}. ${remaining.n === 0 ? 'Plan fully paid — thank you!' : 'Keep learning — next due date applies.'}`);
+      }
+    } else {
+      await notifyUser(env, inst.user_id, `✅ Installment (${inst.id}) approved by ${adminName}. ${remaining.n === 0 ? 'Plan fully paid — thank you!' : 'Keep learning — next due date applies.'}`);
+    }
+    
     return `✅ APPROVED by ${adminName}\nInstallment: ${inst.id}\nRemaining: ${remaining.n}`;
   }
   await env.DB.prepare("UPDATE installments SET status = 'rejected' WHERE id = ?").bind(installmentId).run();

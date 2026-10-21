@@ -32,7 +32,7 @@ export default function Dashboard() {
     }).catch(err => {
       toast("Failed to load dashboard data");
     }).finally(() => setLoading(false));
-  }, [user]);
+  }, [user, toast]);
 
   if (!user) {
     return (
@@ -62,13 +62,17 @@ export default function Dashboard() {
   };
 
   const handleInstallmentProof = (instId: string) => {
-    const botUsername = "TigersLair_bot";
+    // ⚠️ REPLACE 'TigersLair_bot' with your actual bot username (e.g., 'jsagebutlerbot')
+    const botUsername = "TigersLair_bot"; 
     window.open(`https://t.me/${botUsername}?start=INST_${instId}`, '_blank');
-    toast(`Bot opened. Please send your payment slip with caption: INST-${instId}`);
+    toast(`Bot opened. Please send your payment slip.`);
   };
 
   // Find the most recently enrolled course that isn't complete
   const continueLearning = enrollments.find(e => !e.quiz_passed);
+
+  // Check for overdue installments to show a warning and restrict UI
+  const hasOverdue = installments.some(inst => inst.status === 'pending' && new Date(inst.due_date).getTime() < Date.now());
 
   const tabs: { id: TabId; label: string; icon: string }[] = [
     { id: "overview", label: "Overview", icon: "📊" },
@@ -118,8 +122,30 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Continue Learning Widget */}
-      {continueLearning && (
+      {/* Overdue Installment Warning Banner */}
+      {hasOverdue && (
+        <div className="mb-6 rounded-xl border border-alert/30 bg-alert/5 p-5">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <h2 className="font-display text-lg font-bold text-bone mb-1">
+                ⚠️ Access Temporarily Paused
+              </h2>
+              <p className="text-sm text-smoke">
+                You have an overdue installment. Please upload your payment proof to restore full access to your courses and private channels.
+              </p>
+            </div>
+            <button
+              onClick={() => setActiveTab("payments")}
+              className="shrink-0 rounded-md bg-alert px-5 py-2.5 font-display text-sm font-extrabold uppercase tracking-widest text-ink hover:bg-alert/90 transition-colors"
+            >
+              Resolve Now
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Continue Learning Widget (Hidden if overdue) */}
+      {continueLearning && !hasOverdue && (
         <div 
           className="mb-6 cursor-pointer rounded-xl border border-amber/20 bg-gradient-to-r from-amber/10 to-transparent p-5 transition-colors hover:border-amber/40"
           onClick={() => go({ view: "course", courseId: continueLearning.course_id })}
@@ -236,8 +262,8 @@ export default function Dashboard() {
               {enrollments.map((enrollment) => (
                 <div
                   key={enrollment.course_id}
-                  className="lesson-row flex items-center justify-between rounded border border-bone/5 bg-ink p-4 cursor-pointer hover:border-amber/30"
-                  onClick={() => go({ view: "course", courseId: enrollment.course_id })}
+                  className={`lesson-row flex items-center justify-between rounded border border-bone/5 bg-ink p-4 cursor-pointer hover:border-amber/30 ${hasOverdue ? 'opacity-50 pointer-events-none' : ''}`}
+                  onClick={() => !hasOverdue && go({ view: "course", courseId: enrollment.course_id })}
                 >
                   <div className="flex-1">
                     <p className="font-bold text-bone">{enrollment.course_id.toUpperCase()}</p>

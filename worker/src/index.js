@@ -1404,16 +1404,67 @@ export default {
     }
   },
 
+  // ============================================
+  // 🚀 SCHEDULED CRON JOBS (Drip & Installment Alerts)
+  // ============================================
   async scheduled(event, env) {
     const now = Date.now();
-    const pending = await env.DB.prepare(`SELECT i.*, u.name, u.telegram_id, c.title as course_title FROM installments i JOIN users u ON i.user_id = u.id LEFT JOIN courses c ON i.course_id = c.id WHERE i.due_date <= ? AND i.status = 'pending' AND i.reminder_sent = 0`).bind(now).all();
-    for (const inst of pending.results) {
+    const threeDaysFromNow = now + (3 * 24 * 60 * 60 * 1000);
+
+    // 1. Alert STUDENTS who are due NOW
+    const dueNow = await env.DB.prepare(`
+      SELECT i.*, u.name, u.telegram_id, c.title as course_title 
+      FROM installments i 
+      JOIN users u ON i.user_id = u.id 
+      LEFT JOIN courses c ON i.course_id = c.id 
+      WHERE i.due_date <= ? AND i.status = 'pending' AND i.reminder_sent = 0
+    `).bind(now).all();
+
+    for (const inst of dueNow.results) {
       if (inst.telegram_id) {
-        const amount = inst.amount.toLocaleString();
-        const message = `🐯 Hello ${inst.name},\n\nYour installment of ₦${amount} for *${inst.course_title || 'your course'}* is now due.\n\nPlease complete the payment to continue your learning journey without interruption.\n\nOpen the app to pay or upload your proof.`;
-        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: inst.telegram_id, text: message, parse_mode: 'Markdown' }) });
+        const dashboardUrl = env.SITE_URL ? `${env.SITE_URL}/dashboard` : 'https://tigerslair.academy/demo/dashboard';
+        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, { 
+          method: 'POST', 
+          headers: { 'Content-Type': 'application/json' }, 
+          body: JSON.stringify({ 
+            chat_id: inst.telegram_id, 
+            text: `🐯 Hello ${inst.name},\n\nYour installment of ₦${inst.amount.toLocaleString()} for *${inst.course_title || 'your course'}* is now due.\n\nPlease complete the payment to continue your learning journey without interruption.`, 
+            parse_mode: 'Markdown',
+            reply_markup: { 
+              inline_keyboard: [[{ text: '💳 Upload Proof Now', url: dashboardUrl }]] 
+            }
+          }) 
+        });
       }
       await env.DB.prepare('UPDATE installments SET reminder_sent = 1 WHERE id = ?').bind(inst.id).run();
+    }
+
+    // 2. Proactively Alert ADMIN about students due in the next 3 days
+    if (env.ADMIN_CHANNEL_ID) {
+      const dueSoon = await env.DB.prepare(`
+        SELECT u.name, c.title, i.due_date, i.amount
+        FROM installments i 
+        JOIN users u ON i.user_id = u.id 
+        LEFT JOIN courses c ON i.course_id = c.id 
+        WHERE i.due_date > ? AND i.due_date <= ? AND i.status = 'pending' AND i.reminder_sent = 0
+      `).bind(now, threeDaysFromNow).all();
+
+      if (dueSoon.results.length > 0) {
+        let adminMsg = `📊 *Upcoming Installment Alerts (Next 3 Days)*\n\n`;
+        dueSoon.results.forEach(r => {
+          adminMsg += `• *${r.name}* - ${r.title || 'Course'} (₦${r.amount.toLocaleString()})\n  Due: ${new Date(r.due_date).toLocaleDateString()}\n`;
+        });
+        
+        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, { 
+          method: 'POST', 
+          headers: { 'Content-Type': 'application/json' }, 
+          body: JSON.stringify({ 
+            chat_id: env.ADMIN_CHANNEL_ID, 
+            text: adminMsg, 
+            parse_mode: 'Markdown' 
+          }) 
+        });
+      }
     }
   }
 };

@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT UNIQUE NOT NULL,
   telegram_id TEXT,
   role TEXT NOT NULL DEFAULT 'student',  -- student, admin, mentor, instructor
+  password_hash TEXT,
   joined_at INTEGER NOT NULL
 );
 
@@ -22,12 +23,14 @@ CREATE TABLE IF NOT EXISTS courses (
   path TEXT NOT NULL,
   weeks INTEGER NOT NULL,
   price INTEGER NOT NULL,
+  price_usd INTEGER DEFAULT 0,
   hue TEXT NOT NULL,
   icon TEXT NOT NULL,
   summary TEXT NOT NULL,
   outcomes TEXT NOT NULL,
   skills TEXT NOT NULL,
   channel TEXT NOT NULL,
+  category TEXT DEFAULT 'General',
   created_at INTEGER NOT NULL
 );
 
@@ -47,6 +50,8 @@ CREATE TABLE IF NOT EXISTS lessons (
   tags TEXT NOT NULL,
   bullets TEXT NOT NULL,
   msg INTEGER NOT NULL,
+  youtube_url TEXT,
+  unlock_date INTEGER,
   order_index INTEGER NOT NULL
 );
 
@@ -67,6 +72,7 @@ CREATE TABLE IF NOT EXISTS enrollments (
   quiz_score INTEGER,
   quiz_total INTEGER,
   quiz_passed INTEGER NOT NULL DEFAULT 0,
+  weeks_unlocked INTEGER DEFAULT 0,
   UNIQUE(user_id, course_id)
 );
 
@@ -87,6 +93,113 @@ CREATE TABLE IF NOT EXISTS activity_logs (
 );
 
 -- ============================================
+-- PAYMENTS & INSTALLMENTS
+-- ============================================
+CREATE TABLE IF NOT EXISTS payments (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  course_id TEXT REFERENCES courses(id),
+  reference TEXT UNIQUE NOT NULL,
+  amount INTEGER NOT NULL,
+  currency TEXT DEFAULT 'NGN',
+  payment_plan TEXT DEFAULT 'full',
+  status TEXT NOT NULL DEFAULT 'pending',
+  proof_url TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS installments (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  course_id TEXT REFERENCES courses(id),
+  payment_id TEXT REFERENCES payments(id),
+  amount INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  proof_url TEXT,
+  telegram_chat_id TEXT,
+  due_date INTEGER,
+  reminder_sent INTEGER DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+
+-- ============================================
+-- BOT SESSIONS & ASSIGNMENTS
+-- ============================================
+CREATE TABLE IF NOT EXISTS bot_sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  telegram_id TEXT NOT NULL,
+  user_id TEXT,
+  purpose TEXT NOT NULL,
+  reference TEXT,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS assignments (
+  id TEXT PRIMARY KEY,
+  lesson_id TEXT NOT NULL REFERENCES lessons(id),
+  title TEXT NOT NULL,
+  description TEXT,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS assignment_status (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  assignment_id TEXT NOT NULL REFERENCES assignments(id),
+  status TEXT NOT NULL DEFAULT 'pending',
+  submitted_at INTEGER,
+  UNIQUE(user_id, assignment_id)
+);
+
+CREATE TABLE IF NOT EXISTS submissions (
+  id TEXT PRIMARY KEY,
+  assignment_id TEXT NOT NULL REFERENCES assignments(id),
+  user_id TEXT NOT NULL REFERENCES users(id),
+  content TEXT,
+  file_url TEXT,
+  submitted_at INTEGER NOT NULL
+);
+
+-- ============================================
+-- RESOURCES & BADGES
+-- ============================================
+CREATE TABLE IF NOT EXISTS resources (
+  id TEXT PRIMARY KEY,
+  lesson_id TEXT REFERENCES lessons(id),
+  course_id TEXT REFERENCES courses(id),
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  source_url TEXT,
+  thumbnail_url TEXT,
+  duration_seconds INTEGER,
+  file_size_bytes INTEGER,
+  metadata TEXT,
+  access_level TEXT DEFAULT 'enrolled',
+  order_index INTEGER DEFAULT 0,
+  source_type TEXT DEFAULT 'external',
+  key TEXT,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS user_badges (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  badge_id TEXT NOT NULL,
+  earned_at INTEGER NOT NULL,
+  UNIQUE(user_id, badge_id)
+);
+
+CREATE TABLE IF NOT EXISTS certificates (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  course_id TEXT NOT NULL REFERENCES courses(id),
+  issued_at INTEGER NOT NULL,
+  UNIQUE(user_id, course_id)
+);
+
+-- ============================================
 -- MENTORSHIP SYSTEM
 -- ============================================
 CREATE TABLE IF NOT EXISTS mentors (
@@ -97,6 +210,7 @@ CREATE TABLE IF NOT EXISTS mentors (
   specialties TEXT NOT NULL,
   hourly_rate INTEGER,
   is_available INTEGER NOT NULL DEFAULT 1,
+  image_url TEXT,
   created_at INTEGER NOT NULL
 );
 
@@ -194,6 +308,23 @@ CREATE TABLE IF NOT EXISTS telegram_community (
 );
 
 -- ============================================
+-- AUDIT & RATE LIMITS
+-- ============================================
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id TEXT PRIMARY KEY,
+  admin_id TEXT NOT NULL REFERENCES users(id),
+  action TEXT NOT NULL,
+  details TEXT,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS rate_limits (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  identifier TEXT NOT NULL,
+  timestamp INTEGER NOT NULL
+);
+
+-- ============================================
 -- INDEXES
 -- ============================================
 CREATE INDEX IF NOT EXISTS idx_modules_course ON modules(course_id);
@@ -209,3 +340,17 @@ CREATE INDEX IF NOT EXISTS idx_applications_status ON mentorship_applications(st
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON counseling_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_meetups_scheduled ON meetups(scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_attendees_meetup ON meetup_attendees(meetup_id);
+CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id);
+CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
+CREATE INDEX IF NOT EXISTS idx_installments_user ON installments(user_id);
+CREATE INDEX IF NOT EXISTS idx_installments_status ON installments(status);
+CREATE INDEX IF NOT EXISTS idx_installments_due ON installments(due_date);
+CREATE INDEX IF NOT EXISTS idx_bot_sessions_telegram ON bot_sessions(telegram_id);
+CREATE INDEX IF NOT EXISTS idx_assignments_lesson ON assignments(lesson_id);
+CREATE INDEX IF NOT EXISTS idx_assignment_status_user ON assignment_status(user_id);
+CREATE INDEX IF NOT EXISTS idx_resources_lesson ON resources(lesson_id);
+CREATE INDEX IF NOT EXISTS idx_resources_course ON resources(course_id);
+CREATE INDEX IF NOT EXISTS idx_user_badges_user ON user_badges(user_id);
+CREATE INDEX IF NOT EXISTS idx_certificates_user ON certificates(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_admin ON audit_logs(admin_id);
+CREATE INDEX IF NOT EXISTS idx_rate_limits_identifier ON rate_limits(identifier);
