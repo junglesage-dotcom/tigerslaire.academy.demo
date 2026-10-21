@@ -1,5 +1,6 @@
 import { useStore } from "../lib/store";
 import { IconClaw, IconPlane } from "../components/Icons";
+import { GraduationCap, UserCheck, Brain, Smartphone, Globe, Award } from "lucide-react";
 
 // Import your images here
 import heroBg from '../assets/images/hero-bg.png';
@@ -133,38 +134,38 @@ export default function Home() {
           <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
             {[
               {
-                icon: "🎓",
+                icon: <GraduationCap className="h-8 w-8 text-amber" />,
                 title: "More Than Courses",
                 desc: "We do not just dump videos on you. We provide structured learning paths with real assignments and gate quizzes to ensure mastery."
               },
               {
-                icon: "🤝",
+                icon: <UserCheck className="h-8 w-8 text-amber" />,
                 title: "1-on-1 Mentorship",
                 desc: "Stuck on a concept or navigating a career transition? Get paired with a mentor in Tech, Life Skills, or Digital Therapy for personalized guidance."
               },
               {
-                icon: "🧠",
+                icon: <Brain className="h-8 w-8 text-amber" />,
                 title: "Digital Therapy",
                 desc: "Burnout is real. Our digital therapy tracks help you manage screen time, build healthy tech habits, and maintain mental clarity."
               },
               {
-                icon: "📱",
+                icon: <Smartphone className="h-8 w-8 text-amber" />,
                 title: "Telegram Delivery",
                 desc: "Learn on the app you already use. Daily lessons drop straight into your Telegram, making it easy to study during your commute or breaks."
               },
               {
-                icon: "🌍",
+                icon: <Globe className="h-8 w-8 text-amber" />,
                 title: "Community Building",
                 desc: "Join virtual and physical meetups. Network with like-minded individuals, share findings, and grow together in a supportive ecosystem."
               },
               {
-                icon: "🏆",
+                icon: <Award className="h-8 w-8 text-amber" />,
                 title: "Recognized Certificates",
                 desc: "Complete your track, pass the gate quiz, and receive a verifiable certificate to showcase your new skills to employers or clients."
               }
             ].map((item) => (
               <div key={item.title} className="rounded-xl border border-bone/10 bg-coal p-6 backdrop-blur-sm bg-coal/80">
-                <div className="mb-4 text-3xl">{item.icon}</div>
+                <div className="mb-4">{item.icon}</div>
                 <h3 className="font-display text-lg font-bold text-bone">{item.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-smoke">{item.desc}</p>
               </div>
