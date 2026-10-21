@@ -122,7 +122,8 @@ async function processBotSubmission(env, msg, session) {
       ON CONFLICT(user_id, assignment_id) DO UPDATE SET status = 'submitted', submitted_at = ?
     `).bind(user.id, assignmentId, Date.now(), Date.now()).run();
 
-    await env.DB.prepare('DELETE FROM bot_sessions WHERE telegram_id = ? AND purpose = ?', String(chatId), 'assignment_submit').run();
+    // ✅ FIXED: Added .bind() here
+    await env.DB.prepare('DELETE FROM bot_sessions WHERE telegram_id = ? AND purpose = ?').bind(String(chatId), 'assignment_submit').run();
     return sendMsg(env, chatId, '✅ Submitted to course channel!');
   } catch (e) {
     console.error("Submission failed", e);
@@ -137,15 +138,16 @@ export async function handleMessage(msg, env) {
   const chatId = msg.chat.id;
   if (msg.chat.type !== 'private') return;
 
-  // 1. Check for Active Assignment Session
-  const session = await env.DB.prepare('SELECT * FROM bot_sessions WHERE telegram_id = ? AND purpose = ?', String(chatId), 'assignment_submit').first();
+  // ✅ FIXED: Added .bind() here
+  const session = await env.DB.prepare('SELECT * FROM bot_sessions WHERE telegram_id = ? AND purpose = ?').bind(String(chatId), 'assignment_submit').first();
   if (session) {
     return processBotSubmission(env, msg, session);
   }
 
   // 2. Handle Photos for Proof (Existing Logic)
   if (msg.photo && msg.photo.length) {
-    const proofSession = await env.DB.prepare('SELECT * FROM bot_sessions WHERE telegram_id = ?', String(chatId)).first();
+    // ✅ FIXED: Added .bind() here
+    const proofSession = await env.DB.prepare('SELECT * FROM bot_sessions WHERE telegram_id = ?').bind(String(chatId)).first();
     if (proofSession && proofSession.purpose !== 'assignment_submit') {
       const photo = msg.photo[msg.photo.length - 1];
       return forwardProof(env, proofSession, photo.file_id);
