@@ -2,7 +2,7 @@
 const BOT_TOKEN = "8954408184:AAEQ5fXqqQDvVa6IkXOqGKUPhdkCGB471Eo"; // ⚠️ Make sure this is your real bot token from BotFather
 
 // 👇 This is the exact URL you confirmed works
-const WORKER_URL = "https://tigerslair-api.ehisferguson.workers.dev/api/telegram/webhook";
+const WORKER_URL = "https://tigerslair-academy.ehisferguson.workers.dev/api/telegram/webhook";
 
 // 👇 Make sure this matches the TG_WEBHOOK_SECRET in your wrangler.toml
 const SECRET_TOKEN = "Tigerslair-secret-webhook-119"; 

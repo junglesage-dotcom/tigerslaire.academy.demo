@@ -15,7 +15,7 @@ BOT_USERNAME = "jsagebutlerbot"
 ADMIN_CHANNEL_ID = "-1004315180917"      # your private admin channel/chat id
 ADMIN_IDS = "784512390"                   # comma-separated numeric TG ids of admins
 MINI_APP_URL = "https://t.me/jsagebutlerbot/TigersLairAcademy"
-SITE_URL = "https://tigerslair-api.ehisferguson.workers.dev/"
+SITE_URL = "https://tigerslair-academy.ehisferguson.workers.dev/"
 TG_WEBHOOK_SECRET = "Tigerslair-secret-webhook-119"
 [triggers]
 crons = ["0 2 * * *"]
