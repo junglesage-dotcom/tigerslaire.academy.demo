@@ -920,19 +920,19 @@ export default {
         return json({ data: apps.results });
       }
 
-      // ✅ UPDATED: Added 'category' to destructuring and INSERT statement
+      // ✅ UPDATED: Added 'category' and 'introVideoUrl' to destructuring and INSERT statement
       if (path === '/api/admin/courses' && method === 'POST') {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        const { id, code, title, tagline, level, path: coursePath, weeks, price, priceUsd, hue, icon, summary, outcomes, skills, channel, category } = await request.json();
+        const { id, code, title, tagline, level, path: coursePath, weeks, price, priceUsd, hue, icon, summary, outcomes, skills, channel, category, introVideoUrl } = await request.json();
         const courseId = id || 'course_' + uid();
-        await env.DB.prepare(`INSERT INTO courses (id, code, title, tagline, level, path, weeks, price, price_usd, hue, icon, summary, outcomes, skills, channel, category, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(courseId, code, title, tagline, level, coursePath, weeks, price, priceUsd || 0, hue, icon, summary, JSON.stringify(outcomes), JSON.stringify(skills), channel, category || 'General', Date.now()).run();
+        await env.DB.prepare(`INSERT INTO courses (id, code, title, tagline, level, path, weeks, price, price_usd, hue, icon, summary, outcomes, skills, channel, category, intro_video_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(courseId, code, title, tagline, level, coursePath, weeks, price, priceUsd || 0, hue, icon, summary, JSON.stringify(outcomes), JSON.stringify(skills), channel, category || 'General', introVideoUrl || null, Date.now()).run();
         await logAudit(env, token, 'COURSE_CREATED', `Created course: ${title} (${courseId})`);
         return json({ data: { id: courseId } });
       }
 
-      // ✅ UPDATED: Added 'category' to the allowed fields array for updates
+      // ✅ UPDATED: Added 'introVideoUrl' to the allowed fields array for updates
       if (path.startsWith('/api/admin/courses/') && method === 'PUT' && !path.includes('/modules') && !path.includes('/lessons') && !path.includes('/quiz')) {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
@@ -942,7 +942,7 @@ export default {
         const fields = []; const values = [];
         for (const [key, val] of Object.entries(data)) {
           if (['outcomes', 'skills'].includes(key)) { fields.push(`${key} = ?`); values.push(JSON.stringify(val)); } 
-          else if (['code', 'title', 'tagline', 'level', 'path', 'weeks', 'price', 'price_usd', 'hue', 'icon', 'summary', 'channel', 'category'].includes(key)) { fields.push(`${key} = ?`); values.push(val); }
+          else if (['code', 'title', 'tagline', 'level', 'path', 'weeks', 'price', 'price_usd', 'hue', 'icon', 'summary', 'channel', 'category', 'introVideoUrl'].includes(key)) { fields.push(`${key} = ?`); values.push(val); }
         }
         if (fields.length > 0) { 
           values.push(courseId); 

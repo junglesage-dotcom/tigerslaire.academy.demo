@@ -9,6 +9,26 @@ import { IconClaw, IconPlane, IconLock } from "../components/Icons";
 import { BADGE_MAP } from "../components/Badges";
 import { bindBackButton, haptic, botDeepLink } from "../lib/telegram";
 
+// ============================================
+// HELPER: Convert standard video links to embeddable URLs
+// ============================================
+function getIntroVideoEmbedUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  
+  // 1. YouTube
+  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\s?]+)/);
+  if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}?rel=0&modestbranding=1`;
+  
+  // 2. Vimeo
+  const vimeoMatch = url.match(/vimeo\.com\/(\d+)/);
+  if (vimeoMatch) return `https://player.vimeo.com/video/${vimeoMatch[1]}`;
+  
+  // 3. Direct Video Files
+  if (url.endsWith('.mp4') || url.endsWith('.webm') || url.endsWith('.mov')) return url;
+  
+  return url;
+}
+
 export default function CourseDetail({ courseId }: { courseId: string }) {
   const { user, isEnrolled, completeLesson: markComplete, submitQuiz, go, toast, setAuthOpen } = useStore();
   const [course, setCourse] = useState<any>(null);
@@ -274,6 +294,7 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
   const enrolled = isEnrolled(courseId);
   const activePrice = currency === 'NGN' ? (course.price || 0) : (course.price_usd || 0);
   const currencySymbol = currency === 'NGN' ? '₦' : '$';
+  const embedUrl = getIntroVideoEmbedUrl(course.introVideoUrl);
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: '📋' },
@@ -334,6 +355,29 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
           <p className="text-lg sm:text-xl text-smoke max-w-3xl leading-relaxed mb-8">
             {course.tagline}
           </p>
+
+          {/* ✅ NEW: Introductory Video Player */}
+          {embedUrl && (
+            <div className="mt-8 mb-8 overflow-hidden rounded-xl border border-bone/10 bg-black shadow-2xl">
+              <div className="relative w-full" style={{ paddingBottom: '56.25%' /* 16:9 Aspect Ratio */ }}>
+                {embedUrl.endsWith('.mp4') || embedUrl.endsWith('.webm') || embedUrl.endsWith('.mov') ? (
+                  <video 
+                    src={embedUrl} 
+                    controls 
+                    className="absolute inset-0 h-full w-full bg-black"
+                  />
+                ) : (
+                  <iframe
+                    src={embedUrl}
+                    title={`${course.title} Introduction`}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                    className="absolute inset-0 h-full w-full border-0"
+                  />
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Stats Row */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">

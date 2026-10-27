@@ -372,11 +372,22 @@ export default function CourseEditor() {
           onChange={e => setCourse({ ...course, skills: e.target.value })} 
         />
         <input 
-          placeholder="Telegram Channel" 
+          placeholder="Telegram Channel (@channel or -100...)" 
           className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone mb-4" 
           value={course.channel || ''} 
           onChange={e => setCourse({ ...course, channel: e.target.value })} 
         />
+        
+        {/* ✅ NEW: Introductory Video URL Input */}
+        <input 
+          placeholder="Introductory Video URL (Max 90s, e.g., YouTube/Vimeo/MP4)" 
+          className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone mb-1" 
+          value={course.introVideoUrl || ''} 
+          onChange={e => setCourse({ ...course, introVideoUrl: e.target.value })} 
+        />
+        <p className="text-[10px] text-smoke/60 mb-4">
+          Paste a YouTube, Vimeo, or direct MP4 link. Keep it under 1:30 to hook the student.
+        </p>
 
         <button
           onClick={handleSaveCourseDetails}
