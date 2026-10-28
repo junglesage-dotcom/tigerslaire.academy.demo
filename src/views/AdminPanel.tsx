@@ -3,6 +3,11 @@ import { api } from "../lib/api";
 import { sanitizeObject } from "../lib/sanitize";
 import { useStore } from "../lib/store";
 import ConfirmDialog from "../components/ConfirmDialog";
+import { 
+  BarChart3, TrendingUp, FileText, CreditCard, Calendar, 
+  GraduationCap, UserCheck, BookOpen, Users, Shield, 
+  ExternalLink, CheckCircle, Clock, AlertTriangle, Trash2, Pencil, Search
+} from "lucide-react";
 
 export default function AdminPanel() {
   const { user, go, toast } = useStore();
@@ -17,10 +22,10 @@ export default function AdminPanel() {
   const [courses, setCourses] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [progress, setProgress] = useState<any[]>([]);
-  const [auditLogs, setAuditLogs] = useState<any[]>([]); // ✅ NEW
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
 
-  const [userSearch, setUserSearch] = useState(""); // ✅ NEW
-  const [courseSearch, setCourseSearch] = useState(""); // ✅ NEW
+  const [userSearch, setUserSearch] = useState("");
+  const [courseSearch, setCourseSearch] = useState("");
 
   const [analytics, setAnalytics] = useState<any>({ 
     totalRevenue: 0, 
@@ -68,7 +73,7 @@ export default function AdminPanel() {
         api.getCourses(),
         api.getUsers(),
         api.getStudentProgress(),
-        api.getAuditLogs() // ✅ NEW
+        api.getAuditLogs()
       ]);
       
       setAnalytics(analyticsRes.data);
@@ -80,13 +85,12 @@ export default function AdminPanel() {
       setCourses(coursesRes.data);
       setUsers(usersRes.data);
       setProgress(progressRes.data);
-      setAuditLogs(auditRes.data); // ✅ NEW
+      setAuditLogs(auditRes.data);
     } catch (e) {
       toast("Failed to load admin data");
     }
   };
 
-  // ✅ NEW: Memoized search filters
   const filteredUsers = useMemo(() => {
     if (!userSearch) return users;
     const term = userSearch.toLowerCase();
@@ -254,18 +258,23 @@ export default function AdminPanel() {
     });
   };
 
-  const tabs = [
-    { id: 'analytics', label: 'Analytics', icon: '📊' },
-    { id: 'progress', label: 'Student Progress', count: progress.length },
-    { id: 'applications', label: 'Applications', count: apps.filter(a => a.status === 'pending').length },
-    { id: 'payments', label: 'Payments', count: payments.filter(p => p.status === 'proof_submitted').length },
-    { id: 'installments', label: 'Installments', count: installments.length },
-    { id: 'mentors', label: 'Mentors', count: mentors.length },
-    { id: 'instructors', label: 'Instructors', count: instructors.length },
-    { id: 'courses', label: 'Courses', count: courses.length },
-    { id: 'users', label: 'Users', count: users.length },
-    { id: 'audit', label: 'Audit Logs', icon: '🛡️' }, // ✅ NEW
-  ] as const;
+  const tabs: { 
+    id: typeof activeTab; 
+    label: string; 
+    count?: number; 
+    icon?: React.ReactNode 
+  }[] = [
+    { id: 'analytics', label: 'Analytics', icon: <BarChart3 className="h-4 w-4" /> },
+    { id: 'progress', label: 'Student Progress', count: progress.length, icon: <TrendingUp className="h-4 w-4" /> },
+    { id: 'applications', label: 'Applications', count: apps.filter(a => a.status === 'pending').length, icon: <FileText className="h-4 w-4" /> },
+    { id: 'payments', label: 'Payments', count: payments.filter(p => p.status === 'proof_submitted').length, icon: <CreditCard className="h-4 w-4" /> },
+    { id: 'installments', label: 'Installments', count: installments.length, icon: <Calendar className="h-4 w-4" /> },
+    { id: 'mentors', label: 'Mentors', count: mentors.length, icon: <GraduationCap className="h-4 w-4" /> },
+    { id: 'instructors', label: 'Instructors', count: instructors.length, icon: <UserCheck className="h-4 w-4" /> },
+    { id: 'courses', label: 'Courses', count: courses.length, icon: <BookOpen className="h-4 w-4" /> },
+    { id: 'users', label: 'Users', count: users.length, icon: <Users className="h-4 w-4" /> },
+    { id: 'audit', label: 'Audit Logs', icon: <Shield className="h-4 w-4" /> },
+  ];
 
   return (
     <div className="mx-auto max-w-7xl px-5 py-12 sm:px-8">
@@ -280,7 +289,7 @@ export default function AdminPanel() {
               activeTab === t.id ? 'text-amber border-b-2 border-amber' : 'text-smoke hover:text-bone'
             }`}
           >
-            {t.icon && <span>{t.icon}</span>}
+            {t.icon && <span className="flex items-center">{t.icon}</span>}
             {t.label} {t.count !== undefined && t.count > 0 && <span className="ml-1 rounded bg-amber/20 px-1.5 py-0.5 text-[10px] text-amber">{t.count}</span>}
           </button>
         ))}
@@ -290,21 +299,25 @@ export default function AdminPanel() {
         <div className="space-y-8">
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-xl border border-bone/10 bg-coal p-6">
+              <CreditCard className="h-5 w-5 text-mint mb-2" />
               <p className="text-xs font-bold uppercase tracking-widest text-smoke mb-2">Total Revenue</p>
               <p className="font-display text-3xl font-extrabold text-mint">₦{analytics.totalRevenue.toLocaleString()}</p>
               <p className="text-xs text-smoke mt-2">From successful payments</p>
             </div>
             <div className="rounded-xl border border-bone/10 bg-coal p-6">
+              <Users className="h-5 w-5 text-tgsky mb-2" />
               <p className="text-xs font-bold uppercase tracking-widest text-smoke mb-2">Total Students</p>
               <p className="font-display text-3xl font-extrabold text-tgsky">{analytics.totalStudents.toLocaleString()}</p>
               <p className="text-xs text-smoke mt-2">Registered learners</p>
             </div>
             <div className="rounded-xl border border-bone/10 bg-coal p-6">
+              <BookOpen className="h-5 w-5 text-amber mb-2" />
               <p className="text-xs font-bold uppercase tracking-widest text-smoke mb-2">Active Courses</p>
               <p className="font-display text-3xl font-extrabold text-amber">{analytics.totalCourses}</p>
               <p className="text-xs text-smoke mt-2">Published to catalog</p>
             </div>
             <div className="rounded-xl border border-bone/10 bg-coal p-6">
+              <FileText className="h-5 w-5 text-ember mb-2" />
               <p className="text-xs font-bold uppercase tracking-widest text-smoke mb-2">Pending Mentorships</p>
               <p className="font-display text-3xl font-extrabold text-ember">{analytics.pendingApplications}</p>
               <p className="text-xs text-smoke mt-2">Awaiting your review</p>
@@ -368,15 +381,15 @@ export default function AdminPanel() {
                       <td className="py-3 px-2 text-smoke">{new Date(p.enrolled_at).toLocaleDateString()}</td>
                       <td className="py-3 px-2">
                         {p.quiz_passed === 1 ? (
-                          <span className="rounded bg-mint/20 px-2 py-1 text-[10px] font-bold uppercase text-mint">Passed ({p.quiz_score}/{p.quiz_total})</span>
+                          <span className="rounded bg-mint/20 px-2 py-1 text-[10px] font-bold uppercase text-mint flex items-center gap-1 w-fit"><CheckCircle className="h-3 w-3" /> Passed ({p.quiz_score}/{p.quiz_total})</span>
                         ) : p.quiz_score ? (
-                          <span className="rounded bg-amber/20 px-2 py-1 text-[10px] font-bold uppercase text-amber">In Progress ({p.quiz_score}/{p.quiz_total})</span>
+                          <span className="rounded bg-amber/20 px-2 py-1 text-[10px] font-bold uppercase text-amber flex items-center gap-1 w-fit"><Clock className="h-3 w-3" /> In Progress ({p.quiz_score}/{p.quiz_total})</span>
                         ) : (
-                          <span className="rounded bg-bone/5 px-2 py-1 text-[10px] font-bold uppercase text-smoke">Not Started</span>
+                          <span className="rounded bg-bone/5 px-2 py-1 text-[10px] font-bold uppercase text-smoke flex items-center gap-1 w-fit"><AlertTriangle className="h-3 w-3" /> Not Started</span>
                         )}
                       </td>
                       <td className="py-3 px-2 text-right">
-                        <button onClick={() => go({ view: 'course', courseId: p.course_id })} className="text-xs text-tgsky hover:underline font-bold">View Course</button>
+                        <button onClick={() => go({ view: 'course', courseId: p.course_id })} className="text-xs text-tgsky hover:underline font-bold flex items-center gap-1 ml-auto"><ExternalLink className="h-3 w-3" /> View Course</button>
                       </td>
                     </tr>
                   ))}
@@ -403,7 +416,7 @@ export default function AdminPanel() {
                 </div>
                 <div className="mt-4 flex gap-2">
                   <input type="number" placeholder="Propose Price (₦)" className="flex-1 rounded border border-bone/10 bg-coal p-2 text-sm text-bone" id={`price-${app.id}`} />
-                  <button onClick={() => { const price = parseInt((document.getElementById(`price-${app.id}`) as HTMLInputElement).value); if (price) handlePropose(app.id, price); }} className="rounded bg-amber px-4 py-2 text-xs font-bold uppercase text-ink hover:bg-amber/90 transition-colors">Propose</button>
+                  <button onClick={() => { const price = parseInt((document.getElementById(`price-${app.id}`) as HTMLInputElement).value); if (price) handlePropose(app.id, price); }} className="rounded bg-amber px-4 py-2 text-xs font-bold uppercase text-ink hover:bg-amber/90 transition-colors flex items-center gap-1"><CheckCircle className="h-3 w-3" /> Propose</button>
                 </div>
               </div>
             ))}
@@ -422,9 +435,9 @@ export default function AdminPanel() {
                   <p className="font-bold text-bone">{p.user_name} - {p.course_title || 'Mentorship'}</p>
                   <p className="text-xs text-smoke mt-1">Ref: {p.reference}</p>
                   <p className="text-sm text-amber font-bold mt-2">{p.currency === 'USD' ? '$' : '₦'}{p.amount.toLocaleString()}</p>
-                  {p.proof_url && <a href={p.proof_url} target="_blank" rel="noreferrer" className="inline-block mt-2 text-xs text-tgsky underline hover:text-tgsky/80">View Payment Slip ↗</a>}
+                  {p.proof_url && <a href={p.proof_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 mt-2 text-xs text-tgsky underline hover:text-tgsky/80">View Payment Slip <ExternalLink className="h-3 w-3" /></a>}
                 </div>
-                <button onClick={() => { setConfirmDialog({ isOpen: true, title: "Approve Payment", message: `Approve this payment and enroll ${p.user_name}?`, isDestructive: false, onConfirm: async () => { setIsDialogLoading(true); try { await api.approvePayment(p.reference); toast("Payment approved and user enrolled!"); loadAll(); } catch (e: any) { toast(e.message); } finally { setIsDialogLoading(false); setConfirmDialog(prev => ({ ...prev, isOpen: false })); } } }); }} className="self-start rounded bg-mint px-6 py-2 text-xs font-bold uppercase text-ink hover:bg-mint/90 transition-colors">Approve & Enroll</button>
+                <button onClick={() => { setConfirmDialog({ isOpen: true, title: "Approve Payment", message: `Approve this payment and enroll ${p.user_name}?`, isDestructive: false, onConfirm: async () => { setIsDialogLoading(true); try { await api.approvePayment(p.reference); toast("Payment approved and user enrolled!"); loadAll(); } catch (e: any) { toast(e.message); } finally { setIsDialogLoading(false); setConfirmDialog(prev => ({ ...prev, isOpen: false })); } } }); }} className="self-start rounded bg-mint px-6 py-2 text-xs font-bold uppercase text-ink hover:bg-mint/90 transition-colors flex items-center gap-1"><CheckCircle className="h-3 w-3" /> Approve & Enroll</button>
               </div>
             ))}
             {payments.filter(p => p.status === 'proof_submitted').length === 0 && <p className="text-sm text-smoke text-center py-8">No pending bank transfer proofs to review.</p>}
@@ -442,9 +455,9 @@ export default function AdminPanel() {
                   <p className="font-bold text-bone">{inst.user_name} - {inst.course_title || 'Course Installment'}</p>
                   <p className="text-xs text-smoke mt-1">Installment ID: {inst.id}</p>
                   <p className="text-sm text-amber font-bold mt-2">₦{inst.amount.toLocaleString()}</p>
-                  {inst.proof_url && <a href={inst.proof_url} target="_blank" rel="noreferrer" className="inline-block mt-2 text-xs text-tgsky underline hover:text-tgsky/80">View Payment Slip ↗</a>}
+                  {inst.proof_url && <a href={inst.proof_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 mt-2 text-xs text-tgsky underline hover:text-tgsky/80">View Payment Slip <ExternalLink className="h-3 w-3" /></a>}
                 </div>
-                <button onClick={() => { setConfirmDialog({ isOpen: true, title: "Approve Installment", message: `Mark this installment as paid for ${inst.user_name}?`, isDestructive: false, onConfirm: async () => { setIsDialogLoading(true); try { await api.approveInstallment(inst.id); toast("Installment approved!"); loadAll(); } catch (e: any) { toast(e.message); } finally { setIsDialogLoading(false); setConfirmDialog(prev => ({ ...prev, isOpen: false })); } } }); }} className="self-start rounded bg-mint px-6 py-2 text-xs font-bold uppercase text-ink hover:bg-mint/90 transition-colors">Approve</button>
+                <button onClick={() => { setConfirmDialog({ isOpen: true, title: "Approve Installment", message: `Mark this installment as paid for ${inst.user_name}?`, isDestructive: false, onConfirm: async () => { setIsDialogLoading(true); try { await api.approveInstallment(inst.id); toast("Installment approved!"); loadAll(); } catch (e: any) { toast(e.message); } finally { setIsDialogLoading(false); setConfirmDialog(prev => ({ ...prev, isOpen: false })); } } }); }} className="self-start rounded bg-mint px-6 py-2 text-xs font-bold uppercase text-ink hover:bg-mint/90 transition-colors flex items-center gap-1"><CheckCircle className="h-3 w-3" /> Approve</button>
               </div>
             ))}
             {installments.length === 0 && <p className="text-sm text-smoke text-center py-8">No pending installment proofs to review.</p>}
@@ -462,7 +475,7 @@ export default function AdminPanel() {
               <textarea required placeholder="Bio" rows={3} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newMentor.bio} onChange={e => setNewMentor({...newMentor, bio: e.target.value})} />
               <input placeholder="Specialties (comma-separated)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newMentor.specialties} onChange={e => setNewMentor({...newMentor, specialties: e.target.value})} />
               <input type="number" placeholder="Hourly Rate (₦)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newMentor.hourlyRate} onChange={e => setNewMentor({...newMentor, hourlyRate: parseInt(e.target.value) || 0})} />
-              <button type="submit" className="w-full rounded bg-mint py-2 text-xs font-bold uppercase text-ink hover:bg-mint/90 transition-colors">Add Mentor</button>
+              <button type="submit" className="w-full rounded bg-mint py-2 text-xs font-bold uppercase text-ink hover:bg-mint/90 transition-colors flex items-center justify-center gap-1"><Plus className="h-3 w-3" /> Add Mentor</button>
             </form>
           </div>
           <div className="rounded-lg border border-bone/10 bg-coal p-6">
@@ -478,7 +491,7 @@ export default function AdminPanel() {
                       <p className="text-xs text-amber mt-1">₦{m.hourly_rate?.toLocaleString()}/hr</p>
                     </div>
                   </div>
-                  <button onClick={() => promptDeleteMentor(m.id, m.name)} className="shrink-0 text-xs text-alert hover:underline font-bold">Delete</button>
+                  <button onClick={() => promptDeleteMentor(m.id, m.name)} className="shrink-0 text-xs text-alert hover:underline font-bold flex items-center gap-1"><Trash2 className="h-3 w-3" /> Delete</button>
                 </div>
               ))}
               {mentors.length === 0 && <p className="text-sm text-smoke text-center py-4">No mentors added yet.</p>}
@@ -505,7 +518,7 @@ export default function AdminPanel() {
                   ))}
                 </div>
               </div>
-              <button type="submit" className="w-full rounded bg-mint py-2 text-xs font-bold uppercase text-ink hover:bg-mint/90 transition-colors">Add Instructor</button>
+              <button type="submit" className="w-full rounded bg-mint py-2 text-xs font-bold uppercase text-ink hover:bg-mint/90 transition-colors flex items-center justify-center gap-1"><Plus className="h-3 w-3" /> Add Instructor</button>
             </form>
           </div>
           <div className="rounded-lg border border-bone/10 bg-coal p-6">
@@ -517,7 +530,7 @@ export default function AdminPanel() {
                     <p className="font-bold text-bone truncate">{i.name}</p>
                     <p className="text-xs text-smoke mt-1 truncate">{i.bio}</p>
                   </div>
-                  <button onClick={() => promptDeleteInstructor(i.id, i.name)} className="shrink-0 ml-2 text-xs text-alert hover:underline font-bold">Delete</button>
+                  <button onClick={() => promptDeleteInstructor(i.id, i.name)} className="shrink-0 ml-2 text-xs text-alert hover:underline font-bold flex items-center gap-1"><Trash2 className="h-3 w-3" /> Delete</button>
                 </div>
               ))}
               {instructors.length === 0 && <p className="text-sm text-smoke text-center py-4">No instructors added yet.</p>}
@@ -556,20 +569,22 @@ export default function AdminPanel() {
               <textarea required placeholder="Summary" rows={2} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newCourse.summary} onChange={e => setNewCourse({...newCourse, summary: e.target.value})} />
               <textarea placeholder="Outcomes (one per line)" rows={3} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newCourse.outcomes} onChange={e => setNewCourse({...newCourse, outcomes: e.target.value})} />
               <input placeholder="Skills (comma-separated)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newCourse.skills} onChange={e => setNewCourse({...newCourse, skills: e.target.value})} />
-              <button type="submit" className="w-full rounded bg-amber py-2 text-xs font-bold uppercase text-ink hover:bg-amber/90 transition-colors">Create Course</button>
+              <button type="submit" className="w-full rounded bg-amber py-2 text-xs font-bold uppercase text-ink hover:bg-amber/90 transition-colors flex items-center justify-center gap-1"><Plus className="h-3 w-3" /> Create Course</button>
             </form>
           </div>
           <div className="rounded-lg border border-bone/10 bg-coal p-6">
-            {/* ✅ NEW: Course Search */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
               <h2 className="font-display text-xl font-bold text-amber">Existing Courses</h2>
-              <input 
-                type="text" 
-                placeholder="Search courses..." 
-                className="w-full sm:w-64 rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
-                value={courseSearch}
-                onChange={e => setCourseSearch(e.target.value)}
-              />
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-smoke" />
+                <input 
+                  type="text" 
+                  placeholder="Search courses..." 
+                  className="w-full rounded border border-bone/10 bg-ink p-2 pl-9 text-sm text-bone focus:border-amber outline-none"
+                  value={courseSearch}
+                  onChange={e => setCourseSearch(e.target.value)}
+                />
+              </div>
             </div>
             <div className="space-y-3">
               {filteredCourses.length === 0 ? (
@@ -581,8 +596,8 @@ export default function AdminPanel() {
                     <p className="text-xs text-smoke truncate">{c.weeks} weeks · ₦{c.price?.toLocaleString()} / ${c.price_usd?.toLocaleString()}</p>
                   </div>
                   <div className="flex gap-2 shrink-0 ml-2">
-                    <button onClick={() => go({ view: "course-editor", courseId: c.id } as any)} className="rounded bg-amber/20 px-3 py-1 text-xs font-bold text-amber hover:bg-amber/30 transition-colors">Edit</button>
-                    <button onClick={() => promptDeleteCourse(c.id, c.code)} className="rounded bg-alert/10 px-3 py-1 text-xs font-bold text-alert hover:bg-alert/20 transition-colors">Delete</button>
+                    <button onClick={() => go({ view: "course-editor", courseId: c.id } as any)} className="rounded bg-amber/20 px-3 py-1 text-xs font-bold text-amber hover:bg-amber/30 transition-colors flex items-center gap-1"><Pencil className="h-3 w-3" /> Edit</button>
+                    <button onClick={() => promptDeleteCourse(c.id, c.code)} className="rounded bg-alert/10 px-3 py-1 text-xs font-bold text-alert hover:bg-alert/20 transition-colors flex items-center gap-1"><Trash2 className="h-3 w-3" /> Delete</button>
                   </div>
                 </div>
               ))}
@@ -593,16 +608,18 @@ export default function AdminPanel() {
 
       {activeTab === 'users' && (
         <div className="rounded-lg border border-bone/10 bg-coal p-6">
-          {/* ✅ NEW: User Search */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
             <h2 className="font-display text-xl font-bold text-amber">Registered Users ({users.length})</h2>
-            <input 
-              type="text" 
-              placeholder="Search by name or email..." 
-              className="w-full sm:w-64 rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none"
-              value={userSearch}
-              onChange={e => setUserSearch(e.target.value)}
-            />
+            <div className="relative w-full sm:w-64">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-smoke" />
+              <input 
+                type="text" 
+                placeholder="Search by name or email..." 
+                className="w-full rounded border border-bone/10 bg-ink p-2 pl-9 text-sm text-bone focus:border-amber outline-none"
+                value={userSearch}
+                onChange={e => setUserSearch(e.target.value)}
+              />
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
@@ -624,7 +641,7 @@ export default function AdminPanel() {
                     <td className="py-3 px-2 text-smoke">{u.email}</td>
                     <td className="py-3 px-2"><span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase ${u.role === 'admin' ? 'bg-amber/20 text-amber' : 'bg-bone/5 text-bone'}`}>{u.role}</span></td>
                     <td className="py-3 px-2 text-smoke">{u.telegram_id ? 'Linked' : '-'}</td>
-                    <td className="py-3 px-2 text-right">{u.id !== user?.id && <button onClick={() => promptDeleteUser(u.id, u.name)} className="text-xs text-alert hover:underline font-bold">Delete</button>}</td>
+                    <td className="py-3 px-2 text-right">{u.id !== user?.id && <button onClick={() => promptDeleteUser(u.id, u.name)} className="text-xs text-alert hover:underline font-bold flex items-center gap-1 ml-auto"><Trash2 className="h-3 w-3" /> Delete</button>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -633,10 +650,9 @@ export default function AdminPanel() {
         </div>
       )}
 
-      {/* ✅ NEW: Audit Logs Tab */}
       {activeTab === 'audit' && (
         <div className="rounded-lg border border-bone/10 bg-coal p-6">
-          <h2 className="font-display text-xl font-bold text-amber mb-2">System Audit Logs</h2>
+          <h2 className="font-display text-xl font-bold text-amber mb-2 flex items-center gap-2"><Shield className="h-5 w-5" /> System Audit Logs</h2>
           <p className="text-xs text-smoke mb-6">A secure record of all administrative actions and system events.</p>
           <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2">
             {auditLogs.length === 0 ? (
@@ -651,8 +667,8 @@ export default function AdminPanel() {
                     </div>
                     <p className="text-sm text-bone break-words">{log.details}</p>
                   </div>
-                  <span className="text-xs text-smoke whitespace-nowrap sm:text-right">
-                    {new Date(log.created_at).toLocaleString()}
+                  <span className="text-xs text-smoke whitespace-nowrap sm:text-right flex items-center gap-1">
+                    <Clock className="h-3 w-3" /> {new Date(log.created_at).toLocaleString()}
                   </span>
                 </div>
               ))

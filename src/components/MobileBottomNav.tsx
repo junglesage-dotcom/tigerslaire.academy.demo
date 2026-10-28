@@ -1,5 +1,6 @@
 import { useStore } from "../lib/store";
-import { IconClaw, IconBook, IconBars, IconPaw } from "../components/Icons";
+import { BookOpen, LayoutDashboard, User } from "lucide-react";
+import { IconClaw } from "../components/Icons";
 
 export default function MobileBottomNav() {
   const { route, go, user, setAuthOpen } = useStore();
@@ -21,21 +22,21 @@ export default function MobileBottomNav() {
     {
       label: "Home",
       view: "home",
-      icon: IconClaw,
+      icon: IconClaw, // Kept custom brand icon for Home
       active: isActive("home"),
       action: () => go({ view: "home" }),
     },
     {
       label: "Courses",
       view: "courses",
-      icon: IconBook,
+      icon: BookOpen,
       active: isActive("courses", "course"),
       action: () => go({ view: "courses" }),
     },
     {
       label: "Dashboard",
       view: "dashboard",
-      icon: IconBars,
+      icon: LayoutDashboard,
       active: isActive("dashboard", "settings"),
       action: () => {
         if (user) go({ view: "dashboard" });
@@ -45,7 +46,7 @@ export default function MobileBottomNav() {
     {
       label: user ? "Profile" : "Sign In",
       view: "profile",
-      icon: IconPaw,
+      icon: User,
       active: isActive("settings"),
       action: () => {
         if (user) go({ view: "settings" });
@@ -63,7 +64,7 @@ export default function MobileBottomNav() {
             <button
               key={item.view}
               onClick={item.action}
-              className={`flex flex-1 flex-col items-center gap-1 rounded-lg px-2 py-2 transition-colors ${
+              className={`relative flex flex-1 flex-col items-center gap-1 rounded-lg px-2 py-2 transition-colors ${
                 item.active
                   ? "text-amber"
                   : "text-smoke hover:text-bone"

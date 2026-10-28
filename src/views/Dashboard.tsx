@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { useStore } from "../lib/store";
 import { BadgeShelf } from "../components/Badges";
+import { LayoutDashboard, BookOpen, Award, CreditCard, Users, Play, CheckCircle, Settings, AlertTriangle } from "lucide-react";
 
 type TabId = "overview" | "courses" | "certificates" | "payments" | "mentorship";
 
@@ -74,12 +75,12 @@ export default function Dashboard() {
   // Check for overdue installments to show a warning and restrict UI
   const hasOverdue = installments.some(inst => inst.status === 'pending' && new Date(inst.due_date).getTime() < Date.now());
 
-  const tabs: { id: TabId; label: string; icon: string }[] = [
-    { id: "overview", label: "Overview", icon: "📊" },
-    { id: "courses", label: "My Courses", icon: "📚" },
-    { id: "certificates", label: "Certificates", icon: "🏆" },
-    { id: "payments", label: "Payments", icon: "💳" },
-    { id: "mentorship", label: "Mentorship", icon: "🤝" },
+  const tabs: { id: TabId; label: string; icon: React.ReactNode }[] = [
+    { id: "overview", label: "Overview", icon: <LayoutDashboard className="h-4 w-4" /> },
+    { id: "courses", label: "My Courses", icon: <BookOpen className="h-4 w-4" /> },
+    { id: "certificates", label: "Certificates", icon: <Award className="h-4 w-4" /> },
+    { id: "payments", label: "Payments", icon: <CreditCard className="h-4 w-4" /> },
+    { id: "mentorship", label: "Mentorship", icon: <Users className="h-4 w-4" /> },
   ];
 
   return (
@@ -126,17 +127,18 @@ export default function Dashboard() {
       {hasOverdue && (
         <div className="mb-6 rounded-xl border border-alert/30 bg-alert/5 p-5">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div>
-              <h2 className="font-display text-lg font-bold text-bone mb-1">
-                ⚠️ Access Temporarily Paused
-              </h2>
-              <p className="text-sm text-smoke">
-                You have an overdue installment. Please upload your payment proof to restore full access to your courses and private channels.
-              </p>
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-alert shrink-0 mt-0.5" />
+              <div>
+                <h2 className="font-display text-lg font-bold text-bone mb-1">Access Temporarily Paused</h2>
+                <p className="text-sm text-smoke">
+                  You have an overdue installment. Please upload your payment proof to restore full access to your courses and private channels.
+                </p>
+              </div>
             </div>
             <button
               onClick={() => setActiveTab("payments")}
-              className="shrink-0 rounded-md bg-alert px-5 py-2.5 font-display text-sm font-extrabold uppercase tracking-widest text-ink hover:bg-alert/90 transition-colors"
+              className="shrink-0 rounded-md bg-alert px-5 py-2.5 font-display text-sm font-extrabold uppercase tracking-widest text-ink hover:bg-alert/90 transition-colors mt-2 sm:mt-0"
             >
               Resolve Now
             </button>
@@ -152,13 +154,13 @@ export default function Dashboard() {
         >
           <div className="flex items-center gap-4">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-amber/20">
-              <span className="text-2xl">▶️</span>
+              <Play className="h-6 w-6 text-amber fill-amber" />
             </div>
             <div className="flex-1">
               <p className="font-mono text-[10px] uppercase tracking-widest text-amber mb-1">Continue Learning</p>
               <p className="font-display text-lg font-bold text-bone">{continueLearning.course_id.toUpperCase()}</p>
               <p className="text-xs text-smoke mt-0.5">
-                Enrolled {new Date(continueLearning.enrolled_at).toLocaleDateString()} · {continueLearning.quiz_passed ? '✅ Completed' : 'In Progress'}
+                Enrolled {new Date(continueLearning.enrolled_at).toLocaleDateString()} · {continueLearning.quiz_passed ? 'Completed' : 'In Progress'}
               </p>
             </div>
             <span className="hidden sm:block text-smoke">→</span>
@@ -176,7 +178,7 @@ export default function Dashboard() {
               activeTab === t.id ? 'text-amber border-b-2 border-amber' : 'text-smoke hover:text-bone'
             }`}
           >
-            <span>{t.icon}</span>
+            {t.icon}
             <span>{t.label}</span>
           </button>
         ))}
@@ -188,22 +190,26 @@ export default function Dashboard() {
           {/* Stats */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-lg border border-bone/10 bg-coal p-5">
+              <BookOpen className="h-5 w-5 text-amber mb-2" />
               <p className="text-xs font-bold uppercase tracking-widest text-smoke">Courses</p>
               <p className="mt-2 font-display text-3xl font-extrabold text-amber">{enrollments.length}</p>
             </div>
             <div className="rounded-lg border border-bone/10 bg-coal p-5">
+              <CheckCircle className="h-5 w-5 text-mint mb-2" />
               <p className="text-xs font-bold uppercase tracking-widest text-smoke">Completed</p>
               <p className="mt-2 font-display text-3xl font-extrabold text-mint">
                 {enrollments.filter(e => e.quiz_passed).length}
               </p>
             </div>
             <div className="rounded-lg border border-bone/10 bg-coal p-5">
+              <Users className="h-5 w-5 text-tgsky mb-2" />
               <p className="text-xs font-bold uppercase tracking-widest text-smoke">Telegram</p>
               <p className="mt-2 font-display text-3xl font-extrabold text-tgsky">
                 {user.telegram_id ? "Linked" : "Not linked"}
               </p>
             </div>
             <div className="rounded-lg border border-bone/10 bg-coal p-5">
+              <Award className="h-5 w-5 text-bone mb-2" />
               <p className="text-xs font-bold uppercase tracking-widest text-smoke">Badges</p>
               <p className="mt-2 font-display text-3xl font-extrabold text-bone">{Object.keys(badges).length}</p>
             </div>
@@ -211,7 +217,9 @@ export default function Dashboard() {
 
           {/* Badge Case */}
           <div className="rounded-2xl border border-bone/10 bg-coal p-6">
-            <h2 className="font-display text-xl font-bold text-amber mb-4">Badge Case</h2>
+            <h2 className="font-display text-xl font-bold text-amber mb-4 flex items-center gap-2">
+              <Award className="h-5 w-5" /> Badge Case
+            </h2>
             <BadgeShelf earned={badges} />
           </div>
 
@@ -219,7 +227,10 @@ export default function Dashboard() {
           <div className="rounded-lg border border-bone/10 bg-coal p-6">
             <h2 className="font-display text-lg font-bold text-amber mb-4">Recent Activity</h2>
             {activity.length === 0 ? (
-              <p className="text-sm text-smoke">No recent activity yet. Start learning to see your progress here!</p>
+              <div className="text-center py-8">
+                <BookOpen className="h-10 w-10 text-smoke/30 mx-auto mb-3" />
+                <p className="text-sm text-smoke">No recent activity yet. Start learning to see your progress here!</p>
+              </div>
             ) : (
               <div className="space-y-2 max-h-64 overflow-y-auto">
                 {activity.slice(0, 10).map((act) => (
@@ -242,13 +253,14 @@ export default function Dashboard() {
             <h2 className="font-display text-xl font-bold text-amber">My Courses</h2>
             <button
               onClick={() => go({ view: "courses" })}
-              className="text-xs font-bold uppercase tracking-widest text-smoke hover:text-amber"
+              className="text-xs font-bold uppercase tracking-widest text-smoke hover:text-amber flex items-center gap-1"
             >
-              Browse more →
+              Browse more <BookOpen className="h-3 w-3" />
             </button>
           </div>
           {enrollments.length === 0 ? (
             <div className="py-8 text-center">
+              <BookOpen className="h-12 w-12 text-smoke/30 mx-auto mb-4" />
               <p className="text-sm text-smoke mb-4">You haven't enrolled in any courses yet.</p>
               <button
                 onClick={() => go({ view: "courses" })}
@@ -273,12 +285,12 @@ export default function Dashboard() {
                   </div>
                   <div className="flex items-center gap-3">
                     {enrollment.quiz_passed ? (
-                      <span className="rounded bg-mint/20 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-mint">
-                        Completed
+                      <span className="rounded bg-mint/20 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-mint flex items-center gap-1">
+                        <CheckCircle className="h-3 w-3" /> Completed
                       </span>
                     ) : (
-                      <span className="rounded bg-amber/20 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber">
-                        In Progress
+                      <span className="rounded bg-amber/20 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber flex items-center gap-1">
+                        <BookOpen className="h-3 w-3" /> In Progress
                       </span>
                     )}
                   </div>
@@ -291,9 +303,14 @@ export default function Dashboard() {
 
       {activeTab === "certificates" && (
         <div className="rounded-lg border border-bone/10 bg-coal p-6">
-          <h2 className="font-display text-xl font-bold text-amber mb-4">My Certificates</h2>
+          <h2 className="font-display text-xl font-bold text-amber mb-4 flex items-center gap-2">
+            <Award className="h-5 w-5" /> My Certificates
+          </h2>
           {enrollments.filter(e => e.quiz_passed).length === 0 ? (
-            <p className="text-sm text-smoke">No certificates yet. Complete a course to earn yours!</p>
+            <div className="text-center py-8">
+              <Award className="h-12 w-12 text-smoke/30 mx-auto mb-4" />
+              <p className="text-sm text-smoke">No certificates yet. Complete a course to earn yours!</p>
+            </div>
           ) : (
             <div className="space-y-3">
               {enrollments.filter(e => e.quiz_passed).map((enrollment) => (
@@ -304,9 +321,11 @@ export default function Dashboard() {
                 >
                   <div>
                     <p className="font-bold text-bone">{enrollment.course_id.toUpperCase()}</p>
-                    <p className="text-xs text-mint mt-1">✅ Certificate Earned</p>
+                    <p className="text-xs text-mint mt-1 flex items-center gap-1">
+                      <CheckCircle className="h-3 w-3" /> Certificate Earned
+                    </p>
                   </div>
-                  <span className="text-smoke">View →</span>
+                  <span className="text-smoke flex items-center gap-1">View <BookOpen className="h-3 w-3" /></span>
                 </div>
               ))}
             </div>
@@ -318,7 +337,9 @@ export default function Dashboard() {
         <div className="space-y-6">
           {installments.length > 0 ? (
             <div className="rounded-xl border border-amber/30 bg-amber/5 p-6">
-              <h2 className="font-display text-xl font-bold text-amber mb-4">⚠️ Pending Installments</h2>
+              <h2 className="font-display text-xl font-bold text-amber mb-4 flex items-center gap-2">
+                <CreditCard className="h-5 w-5" /> Pending Installments
+              </h2>
               <div className="space-y-3">
                 {installments.map((inst) => (
                   <div key={inst.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-lg border border-amber/10 bg-coal p-4">
@@ -338,8 +359,8 @@ export default function Dashboard() {
                       </button>
                     )}
                     {inst.status === 'proof_submitted' && (
-                      <span className="shrink-0 rounded-md bg-mint/20 px-4 py-2 text-xs font-bold uppercase tracking-widest text-mint">
-                        Awaiting Approval
+                      <span className="shrink-0 rounded-md bg-mint/20 px-4 py-2 text-xs font-bold uppercase tracking-widest text-mint flex items-center gap-1">
+                        <CheckCircle className="h-3 w-3" /> Awaiting Approval
                       </span>
                     )}
                   </div>
@@ -348,6 +369,7 @@ export default function Dashboard() {
             </div>
           ) : (
             <div className="rounded-lg border border-bone/10 bg-coal p-6 text-center">
+              <CheckCircle className="h-12 w-12 text-mint/30 mx-auto mb-4" />
               <p className="text-smoke">No pending payments. You're all caught up!</p>
             </div>
           )}
@@ -356,43 +378,57 @@ export default function Dashboard() {
 
       {activeTab === "mentorship" && (
         <div className="rounded-lg border border-bone/10 bg-coal p-6">
-          <h2 className="font-display text-xl font-bold text-amber mb-4">Mentorship & Community</h2>
+          <h2 className="font-display text-xl font-bold text-amber mb-4 flex items-center gap-2">
+            <Users className="h-5 w-5" /> Mentorship & Community
+          </h2>
           <div className="space-y-3">
-            {/* ✅ NEW: Account Settings Button */}
             <button
               onClick={() => go({ view: "settings" })}
-              className="w-full rounded border border-bone/5 bg-ink p-4 text-left text-sm text-bone hover:border-amber/30 transition-colors"
+              className="w-full rounded border border-bone/5 bg-ink p-4 text-left text-sm text-bone hover:border-amber/30 transition-colors flex items-center gap-3"
             >
-              <p className="font-bold mb-1">⚙️ Account Settings →</p>
-              <p className="text-xs text-smoke">Manage profile, password, and integrations</p>
+              <Settings className="h-5 w-5 text-smoke" />
+              <div>
+                <p className="font-bold mb-1">Account Settings</p>
+                <p className="text-xs text-smoke">Manage profile, password, and integrations</p>
+              </div>
             </button>
 
             <button
               onClick={() => go({ view: "mentorshop" })}
-              className="w-full rounded border border-bone/5 bg-ink p-4 text-left text-sm text-bone hover:border-amber/30 transition-colors"
+              className="w-full rounded border border-bone/5 bg-ink p-4 text-left text-sm text-bone hover:border-amber/30 transition-colors flex items-center gap-3"
             >
-              <p className="font-bold mb-1">Apply for Mentorship →</p>
-              <p className="text-xs text-smoke">Get paired with an experienced mentor</p>
+              <Users className="h-5 w-5 text-smoke" />
+              <div>
+                <p className="font-bold mb-1">Apply for Mentorship</p>
+                <p className="text-xs text-smoke">Get paired with an experienced mentor</p>
+              </div>
             </button>
             <button
               onClick={() => go({ view: "counseling" })}
-              className="w-full rounded border border-bone/5 bg-ink p-4 text-left text-sm text-bone hover:border-amber/30 transition-colors"
+              className="w-full rounded border border-bone/5 bg-ink p-4 text-left text-sm text-bone hover:border-amber/30 transition-colors flex items-center gap-3"
             >
-              <p className="font-bold mb-1">Book Counseling Session →</p>
-              <p className="text-xs text-smoke">Digital therapy and personal guidance</p>
+              <Award className="h-5 w-5 text-smoke" />
+              <div>
+                <p className="font-bold mb-1">Book Counseling Session</p>
+                <p className="text-xs text-smoke">Digital therapy and personal guidance</p>
+              </div>
             </button>
             <button
               onClick={() => go({ view: "meetups" })}
-              className="w-full rounded border border-bone/5 bg-ink p-4 text-left text-sm text-bone hover:border-amber/30 transition-colors"
+              className="w-full rounded border border-bone/5 bg-ink p-4 text-left text-sm text-bone hover:border-amber/30 transition-colors flex items-center gap-3"
             >
-              <p className="font-bold mb-1">Community Meetups →</p>
-              <p className="text-xs text-smoke">Join live sessions and networking events</p>
+              <LayoutDashboard className="h-5 w-5 text-smoke" />
+              <div>
+                <p className="font-bold mb-1">Community Meetups</p>
+                <p className="text-xs text-smoke">Join live sessions and networking events</p>
+              </div>
             </button>
             {user.telegram_id && (
               <button
                 onClick={unlinkTelegram}
-                className="w-full rounded border border-alert/20 bg-ink p-4 text-left text-sm text-alert hover:border-alert transition-colors"
+                className="w-full rounded border border-alert/20 bg-ink p-4 text-left text-sm text-alert hover:border-alert transition-colors flex items-center gap-3"
               >
+                <AlertTriangle className="h-5 w-5" />
                 Unlink Telegram Account
               </button>
             )}
