@@ -26,8 +26,9 @@ const sendMsg = (env, chat_id, text, extra = {}) => {
   return tgApi(env, 'sendMessage', { chat_id, text, parse_mode: 'Markdown', disable_web_page_preview: true, ...extra });
 };
 
-// ✅ FIXED: Strip trailing slashes to prevent double-slash URL errors
-const getMiniAppUrl = (env) => (env.MINI_APP_URL || `https://t.me/${env.BOT_USERNAME || 'jsagebutlerbot'}/app`).replace(/\/+$/, '');
+// ✅ FIXED: Telegram's web_app buttons strictly require an https:// URL. 
+// Using SITE_URL ensures it's a valid HTTPS URL that Telegram will accept.
+const getMiniAppUrl = (env) => (env.SITE_URL || 'https://tigerslair.academy').replace(/\/+$/, '');
 const getSiteUrl = (env) => (env.SITE_URL || 'https://tigerslair.academy').replace(/\/+$/, '');
 
 const HELP_TEXT = [
@@ -347,7 +348,6 @@ async function myCourses(env, chatId, cb) {
       return `${i + 1}. ${r.code} — ${r.title}\n   Progress: ${r.done}/${r.total} lessons (${pct}%)${r.quiz_passed ? ' · ✅ Completed' : ''}`;
     });
     
-    // ✅ FIXED: Removed duplicate 'course_' prefix and ensured clean URL
     const keyboard = rows.results.map((r) => [
       { text: `📖 ${r.code} — Open`, web_app: { url: `${getMiniAppUrl(env)}?startapp=${r.id}` } },
       ...(r.channel ? [{ text: '🔑 Channel', callback_data: `chan:${r.id}` }] : []),
@@ -399,7 +399,6 @@ async function status(env, chatId) {
       text += `\n\n🔒 *Action Required:* Your access is paused until the overdue installment is cleared.`;
     }
 
-    // ✅ FIXED: Ensured clean URL without double slashes
     const keyboard = {
       inline_keyboard: [
         [{ text: '📚 Continue Learning', web_app: { url: `${getMiniAppUrl(env)}?startapp=${nextLesson?.cid || ''}` } }],
