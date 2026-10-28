@@ -7,8 +7,10 @@ const tgApi = (env, method, body) =>
     body: JSON.stringify(body),
   }).then((r) => r.json());
 
-const sendMsg = (env, chat_id, text, extra = {}) =>
-  tgApi(env, 'sendMessage', { chat_id, text, parse_mode: 'Markdown', disable_web_page_preview: true, ...extra });
+const sendMsg = (env, chat_id, text, extra = {}) => {
+  console.log("🔥 sendMsg called for chat_id:", chat_id, "text:", text);
+  return tgApi(env, 'sendMessage', { chat_id, text, parse_mode: 'Markdown', disable_web_page_preview: true, ...extra });
+};
 
 const getMiniAppUrl = (env) => env.MINI_APP_URL || `https://t.me/${env.BOT_USERNAME || 'jsagebutlerbot'}/app`;
 const getSiteUrl = (env) => env.SITE_URL || 'https://tigerslair.academy';
@@ -51,22 +53,25 @@ async function notifyUser(env, userId, text) {
 // ============================================
 async function checkAccessRestriction(env, userId, chatId) {
   try {
+    console.log("🔥 checkAccessRestriction running for userId:", userId);
     const overdue = await env.DB.prepare(`
       SELECT 1 FROM installments 
       WHERE user_id = ? AND status = 'pending' AND due_date < ?
     `).bind(userId, Date.now()).first();
     
     if (overdue) {
+      console.log("🔥 User has overdue installment. Blocking access.");
       await sendMsg(env, chatId, 
         "🔒 *Access Temporarily Paused*\n\nYou have an overdue installment. To continue accessing course materials, private channels, and assignments, please upload your payment proof via the web dashboard.\n\n[💳 Manage Installments](" + getSiteUrl(env) + "/dashboard)", 
         { parse_mode: 'Markdown' }
       );
       return true;
     }
+    console.log("🔥 No overdue installments. Access granted.");
     return false;
   } catch (e) {
-    console.error("checkAccessRestriction DB error:", e);
-    return false; // Fail open so we don't permanently lock users out due to a schema error
+    console.error("🔥 checkAccessRestriction DB error:", e);
+    return false; 
   }
 }
 
@@ -102,19 +107,9 @@ async function processBotSubmission(env, msg, session) {
 
   try {
     if (msg.photo && msg.photo.length > 0) {
-      await tgApi(env, 'copyMessage', {
-        chat_id: targetChannel,
-        from_chat_id: chatId,
-        message_id: msg.message_id,
-        caption: caption
-      });
+      await tgApi(env, 'copyMessage', { chat_id: targetChannel, from_chat_id: chatId, message_id: msg.message_id, caption: caption });
     } else if (msg.document) {
-      await tgApi(env, 'copyMessage', {
-        chat_id: targetChannel,
-        from_chat_id: chatId,
-        message_id: msg.message_id,
-        caption: caption
-      });
+      await tgApi(env, 'copyMessage', { chat_id: targetChannel, from_chat_id: chatId, message_id: msg.message_id, caption: caption });
     } else if (msg.text) {
       await sendMsg(env, targetChannel, `${caption}\n\n*Answer:*\n${msg.text}`);
     }
@@ -128,7 +123,7 @@ async function processBotSubmission(env, msg, session) {
     await env.DB.prepare('DELETE FROM bot_sessions WHERE telegram_id = ? AND purpose = ?').bind(String(chatId), 'assignment_submit').run();
     return sendMsg(env, chatId, '✅ Submitted to course channel!');
   } catch (e) {
-    console.error("Submission failed", e);
+    console.error("🔥 Submission failed", e);
     return sendMsg(env, chatId, '❌ Failed to submit. Is the bot an admin in the course channel?');
   }
 }
@@ -137,27 +132,38 @@ async function processBotSubmission(env, msg, session) {
 // MESSAGE HANDLER
 // ============================================
 export async function handleMessage(msg, env) {
+  console.log("🔥 handleMessage called. msg object:", JSON.stringify(msg));
   const chatId = msg.chat.id;
-  if (msg.chat.type !== 'private') return;
+  if (msg.chat.type !== 'private') {
+    console.log("🔥 Ignoring non-private chat");
+    return;
+  }
 
   try {
     const session = await env.DB.prepare('SELECT * FROM bot_sessions WHERE telegram_id = ? AND purpose = ?').bind(String(chatId), 'assignment_submit').first();
     if (session) {
+      console.log("🔥 Active assignment session found");
       return processBotSubmission(env, msg, session);
     }
 
     if (msg.photo && msg.photo.length) {
       const proofSession = await env.DB.prepare('SELECT * FROM bot_sessions WHERE telegram_id = ?').bind(String(chatId)).first();
       if (proofSession && proofSession.purpose !== 'assignment_submit') {
+        console.log("🔥 Processing photo proof");
         const photo = msg.photo[msg.photo.length - 1];
         return forwardProof(env, proofSession, photo.file_id);
       }
     }
 
     const text = (msg.text || '').trim();
-    if (!text) return;
+    console.log("🔥 Extracted text command:", text);
+    if (!text) {
+      console.log("🔥 No text found, returning early");
+      return;
+    }
 
     if (text === '/start' || text.startsWith('/start ')) {
+      console.log("🔥 Routing to handleStart");
       return handleStart(env, chatId, text.replace('/start', '').trim());
     }
 
@@ -169,15 +175,22 @@ export async function handleMessage(msg, env) {
       return startAssignmentSession(env, chatId, args[1]);
     }
 
-    if (cmd === '/mycourses') return myCourses(env, chatId);
+    if (cmd === '/mycourses') {
+      console.log("🔥 Routing to myCourses");
+      return myCourses(env, chatId);
+    }
     if (cmd === '/channel' || cmd === '/group') return channelByCode(env, chatId, text.split(' ')[1] || '');
     if (cmd === '/proof') {
       const ref = text.split(' ')[1];
       if (!ref) return sendMsg(env, chatId, 'Usage: /proof <PAYMENT-REFERENCE>');
       return startProofSession(env, chatId, ref);
     }
-    if (cmd === '/status') return status(env, chatId);
+    if (cmd === '/status') {
+      console.log("🔥 Routing to status");
+      return status(env, chatId);
+    }
     
+    console.log("🔥 Falling back to HELP_TEXT");
     return sendMsg(env, chatId, HELP_TEXT, {
       reply_markup: { inline_keyboard: [
         [{ text: '📚 My Courses', callback_data: 'nav:mycourses' }],
@@ -185,12 +198,13 @@ export async function handleMessage(msg, env) {
       ] },
     });
   } catch (e) {
-    console.error("handleMessage error:", e);
+    console.error("🔥 handleMessage CRITICAL ERROR:", e);
     return sendMsg(env, chatId, `❌ An unexpected error occurred: ${e.message}`);
   }
 }
 
 async function handleStart(env, chatId, payload) {
+  console.log("🔥 handleStart called with payload:", payload);
   if (!payload) {
     return sendMsg(env, chatId, "Welcome to the Tiger's Lair Academy Bot! 🐯\nUse the menu below to get started.", {
       reply_markup: { inline_keyboard: [
@@ -238,31 +252,12 @@ async function forwardProof(env, session, fileId) {
   if (session.purpose === 'payment') {
     const row = await env.DB.prepare(`SELECT p.*, u.name, u.email, c.title AS course_title FROM payments p JOIN users u ON u.id = p.user_id LEFT JOIN courses c ON c.id = p.course_id WHERE p.reference = ?`).bind(session.reference).first();
     if (!row) return sendMsg(env, chatId, 'Payment reference expired. Use /proof <REF> again.');
-    caption = [
-      '🧾 PAYMENT PROOF — FULL',
-      `Student: ${row.name} (${row.user_id})`,
-      `Email: ${row.email}`,
-      `Reference: ${row.reference}`,
-      `Amount: ${row.currency === 'USD' ? '$' : '₦'}${Number(row.amount).toLocaleString()}`,
-      `Course: ${row.course_title || 'Mentorship'}`,
-      `Plan: ${row.payment_plan || 'full'}`,
-      '',
-      'Approve to enroll the student.',
-    ].join('\n');
+    caption = ['🧾 PAYMENT PROOF — FULL', `Student: ${row.name} (${row.user_id})`, `Email: ${row.email}`, `Reference: ${row.reference}`, `Amount: ${row.currency === 'USD' ? '$' : '₦'}${Number(row.amount).toLocaleString()}`, `Course: ${row.course_title || 'Mentorship'}`, `Plan: ${row.payment_plan || 'full'}`, '', 'Approve to enroll the student.'].join('\n');
     keyboard = [[{ text: '✅ Approve', callback_data: `payA:${row.reference}` }, { text: '❌ Reject', callback_data: `payR:${row.reference}` }]];
   } else {
     const row = await env.DB.prepare(`SELECT i.*, u.name, u.email, c.title AS course_title FROM installments i JOIN users u ON u.id = i.user_id LEFT JOIN courses c ON c.id = i.course_id WHERE i.id = ?`).bind(session.reference).first();
     if (!row) return sendMsg(env, chatId, 'Installment reference expired. Use /proof <REF> again.');
-    caption = [
-      '🧾 PAYMENT PROOF — INSTALLMENT',
-      `Student: ${row.name} (${row.user_id})`,
-      `Email: ${row.email}`,
-      `Installment: ${row.id}`,
-      `Amount: ₦${Number(row.amount).toLocaleString()}`,
-      `Course: ${row.course_title || 'Course'}`,
-      '',
-      'Approve to mark this installment paid.',
-    ].join('\n');
+    caption = ['🧾 PAYMENT PROOF — INSTALLMENT', `Student: ${row.name} (${row.user_id})`, `Email: ${row.email}`, `Installment: ${row.id}`, `Amount: ₦${Number(row.amount).toLocaleString()}`, `Course: ${row.course_title || 'Course'}`, '', 'Approve to mark this installment paid.'].join('\n');
     keyboard = [[{ text: '✅ Approve', callback_data: `instA:${row.id}` }, { text: '❌ Reject', callback_data: `instR:${row.id}` }]];
   }
 
@@ -283,6 +278,7 @@ async function channelByCode(env, chatId, code) {
 
 async function channelById(env, chatId, courseId, cb) {
   try {
+    console.log("🔥 channelById called for courseId:", courseId);
     const user = await userByTg(env, chatId);
     if (!user) return sendMsg(env, chatId, 'Link your account first from the website dashboard.');
     
@@ -304,7 +300,7 @@ async function channelById(env, chatId, courseId, cb) {
     if (cb) return tgApi(env, 'editMessageText', { chat_id: cb.message.chat.id, message_id: cb.message.message_id, text });
     return sendMsg(env, chatId, text);
   } catch (e) {
-    console.error("channelById error:", e);
+    console.error("🔥 channelById error:", e);
     return sendMsg(env, chatId, `❌ Error fetching channel: ${e.message}`);
   }
 }
@@ -314,7 +310,9 @@ async function channelById(env, chatId, courseId, cb) {
 // ============================================
 async function myCourses(env, chatId, cb) {
   try {
+    console.log("🔥 myCourses called");
     const user = await userByTg(env, chatId);
+    console.log("🔥 myCourses user found:", user ? "Yes" : "No");
     if (!user) return sendMsg(env, chatId, "Your Telegram isn't linked to a student account. Open the dashboard and tap \"Link Telegram\".", {
       reply_markup: { inline_keyboard: [[{ text: '🔗 Link Account', url: `${getSiteUrl(env)}/?link=1` }]] },
     });
@@ -326,6 +324,7 @@ async function myCourses(env, chatId, cb) {
         (SELECT COUNT(*) FROM lesson_completions lc JOIN lessons l ON l.id = lc.lesson_id WHERE l.course_id = c.id AND lc.user_id = ?) AS done
       FROM enrollments e JOIN courses c ON c.id = e.course_id WHERE e.user_id = ? ORDER BY e.enrolled_at DESC`).bind(user.id, user.id).all();
       
+    console.log("🔥 myCourses DB rows fetched:", rows.results.length);
     if (!rows.results.length) return sendMsg(env, chatId, "You haven't enrolled in any course yet. Browse the catalogue in the app.");
     
     const lines = rows.results.map((r, i) => {
@@ -342,14 +341,16 @@ async function myCourses(env, chatId, cb) {
     if (cb) return tgApi(env, 'editMessageText', { chat_id: cb.message.chat.id, message_id: cb.message.message_id, text, reply_markup: { inline_keyboard: keyboard } });
     return sendMsg(env, chatId, text, { reply_markup: { inline_keyboard: keyboard } });
   } catch (e) {
-    console.error("myCourses error:", e);
+    console.error("🔥 myCourses CRITICAL ERROR:", e);
     return sendMsg(env, chatId, `❌ An error occurred while fetching your courses: ${e.message}`);
   }
 }
 
 async function status(env, chatId) {
   try {
+    console.log("🔥 status called for chatId:", chatId);
     const user = await userByTg(env, chatId);
+    console.log("🔥 status user found:", user ? "Yes" : "No");
     if (!user) return sendMsg(env, chatId, 'Not linked. Open the website dashboard and tap "Link Telegram".');
     
     const overdue = await env.DB.prepare(`SELECT 1 FROM installments WHERE user_id = ? AND status = 'pending' AND due_date < ?`).bind(user.id, Date.now()).first();
@@ -389,9 +390,10 @@ async function status(env, chatId) {
       ]
     };
 
+    console.log("🔥 status sending final message");
     return sendMsg(env, chatId, text, { reply_markup: keyboard });
   } catch (e) {
-    console.error("status error:", e);
+    console.error("🔥 status CRITICAL ERROR:", e);
     return sendMsg(env, chatId, `❌ An error occurred while fetching your status: ${e.message}`);
   }
 }
@@ -427,7 +429,7 @@ export async function handleCallback(cb, env) {
     }
     return tgApi(env, 'answerCallbackQuery', { callback_query_id: cb.id });
   } catch (e) {
-    console.error("handleCallback error:", e);
+    console.error("🔥 handleCallback CRITICAL ERROR:", e);
     return tgApi(env, 'answerCallbackQuery', { callback_query_id: cb.id, text: `Error: ${e.message}`, show_alert: true });
   }
 }
@@ -443,11 +445,7 @@ async function settlePayment(env, reference, approve, adminName) {
     if (payment.course_id) {
       const course = await env.DB.prepare('SELECT channel FROM courses WHERE id = ?').bind(payment.course_id).first();
       if (course && course.channel) {
-        const invite = await tgApi(env, 'createChatInviteLink', {
-          chat_id: normalizeChat(course.channel),
-          member_limit: 1,
-          expire_date: Math.floor(Date.now() / 1000) + 86400
-        });
+        const invite = await tgApi(env, 'createChatInviteLink', { chat_id: normalizeChat(course.channel), member_limit: 1, expire_date: Math.floor(Date.now() / 1000) + 86400 });
         if (invite.ok) {
           await notifyUser(env, payment.user_id, `✅ Your payment (${reference}) was approved by ${adminName}. You're enrolled!\n\n👉 [Join Private Course Channel](${invite.result.invite_link})`);
         } else {
@@ -459,7 +457,6 @@ async function settlePayment(env, reference, approve, adminName) {
     } else {
       await notifyUser(env, payment.user_id, `✅ Your payment (${reference}) was approved by ${adminName}. You're enrolled — open the app to start learning!`);
     }
-    
     return `✅ APPROVED by ${adminName}\nPayment: ${reference}\nStudent enrolled.`;
   }
   await env.DB.prepare("UPDATE payments SET status = 'rejected', updated_at = ? WHERE id = ?").bind(Date.now(), payment.id).run();
@@ -480,11 +477,7 @@ async function settleInstallment(env, installmentId, approve, adminName) {
     if (inst.course_id) {
       const course = await env.DB.prepare('SELECT channel FROM courses WHERE id = ?').bind(inst.course_id).first();
       if (course && course.channel) {
-        const invite = await tgApi(env, 'createChatInviteLink', {
-          chat_id: normalizeChat(course.channel),
-          member_limit: 1,
-          expire_date: Math.floor(Date.now() / 1000) + 86400
-        });
+        const invite = await tgApi(env, 'createChatInviteLink', { chat_id: normalizeChat(course.channel), member_limit: 1, expire_date: Math.floor(Date.now() / 1000) + 86400 });
         if (invite.ok) {
           await notifyUser(env, inst.user_id, `✅ Installment (${inst.id}) approved by ${adminName}. ${remaining.n === 0 ? 'Plan fully paid — thank you!' : 'Keep learning — next due date applies.'}\n\n👉 [Join Private Course Channel](${invite.result.invite_link})`);
         } else {
@@ -496,7 +489,6 @@ async function settleInstallment(env, installmentId, approve, adminName) {
     } else {
       await notifyUser(env, inst.user_id, `✅ Installment (${inst.id}) approved by ${adminName}. ${remaining.n === 0 ? 'Plan fully paid — thank you!' : 'Keep learning — next due date applies.'}`);
     }
-    
     return `✅ APPROVED by ${adminName}\nInstallment: ${inst.id}\nRemaining: ${remaining.n}`;
   }
   await env.DB.prepare("UPDATE installments SET status = 'rejected' WHERE id = ?").bind(installmentId).run();
