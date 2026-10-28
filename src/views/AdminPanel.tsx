@@ -6,7 +6,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import { 
   BarChart3, TrendingUp, FileText, CreditCard, Calendar, 
   GraduationCap, UserCheck, BookOpen, Users, Shield, 
-  ExternalLink, CheckCircle, Clock, AlertTriangle, Trash2, Pencil, Search
+  ExternalLink, CheckCircle, Clock, AlertTriangle, Trash2, Pencil, Search, Plus
 } from "lucide-react";
 
 export default function AdminPanel() {
