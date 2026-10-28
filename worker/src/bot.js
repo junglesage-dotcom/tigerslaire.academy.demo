@@ -1,14 +1,28 @@
 // worker/src/bot.js
 
-const tgApi = (env, method, body) =>
-  fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }).then((r) => r.json());
+const tgApi = async (env, method, body) => {
+  console.log(`🔥 Calling Telegram API: ${method}`, JSON.stringify(body));
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const result = await response.json();
+    console.log(`🔥 Telegram API Response for ${method}:`, JSON.stringify(result));
+    
+    if (!result.ok) {
+      console.error(`🔥 Telegram API Error for ${method}:`, result.description);
+    }
+    return result;
+  } catch (e) {
+    console.error(`🔥 Network error calling Telegram API ${method}:`, e);
+    return { ok: false, error: e.message };
+  }
+};
 
 const sendMsg = (env, chat_id, text, extra = {}) => {
-  console.log("🔥 sendMsg called for chat_id:", chat_id, "text:", text);
+  console.log("🔥 sendMsg called for chat_id:", chat_id, "text:", text.substring(0, 50) + "...");
   return tgApi(env, 'sendMessage', { chat_id, text, parse_mode: 'Markdown', disable_web_page_preview: true, ...extra });
 };
 
