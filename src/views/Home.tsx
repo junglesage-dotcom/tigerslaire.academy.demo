@@ -38,7 +38,7 @@ export default function Home() {
           </h1>
           
           <p className="mx-auto mt-6 max-w-2xl text-lg text-smoke sm:text-xl drop-shadow-md">
-            An educational ecosystem combining practical courses, 1-on-1 mentorship, and digital therapy. 
+            An AI powered educational ecosystem combining practical courses, 1-on-1 mentorship, and digital therapy. 
             We do not just teach skills. We build resilient minds.
           </p>
 
