@@ -1,12 +1,40 @@
 import { useStore } from "../lib/store";
 import { IconClaw, IconPlane } from "../components/Icons";
-import { GraduationCap, UserCheck, Brain, Smartphone, Globe, Award } from "lucide-react";
+import { GraduationCap, UserCheck, Brain, Smartphone, Globe, Award, Check } from "lucide-react";
+import { motion } from "framer-motion";
 
 // Import your images here
 import heroBg from '../assets/images/hero-bg.png';
 import clawImage from '../assets/images/claw-image.png';
 import founderEhis from '../assets/images/founder-ehis.png';
-import clawBg from '../assets/images/claw.png'; // New image for Platform Highlights
+import clawBg from '../assets/images/claw.png';
+
+// ============================================
+// ANIMATION VARIANTS
+// ============================================
+const fadeInUp = {
+  hidden: { opacity: 0, y: 40 },
+  visible: { 
+    opacity: 1, 
+    y: 0,
+    transition: { duration: 0.6, ease: "easeOut" }
+  }
+};
+
+const staggerContainer = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.15
+    }
+  }
+};
+
+const hoverScale = {
+  rest: { scale: 1 },
+  hover: { scale: 1.1, rotate: 5, transition: { type: "spring", stiffness: 300, damping: 15 } }
+};
 
 export default function Home() {
   const { go, setAuthOpen } = useStore();
@@ -25,24 +53,29 @@ export default function Home() {
         {/* Dark overlay to ensure text is readable over the image */}
         <div className="absolute inset-0 bg-gradient-to-b from-coal/90 via-coal/70 to-coal/90 backdrop-blur-[2px]" />
         
-        <div className="relative mx-auto max-w-7xl text-center w-full">
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-bone/10 bg-coal/50 px-4 py-1.5 backdrop-blur-sm">
+        <motion.div 
+          className="relative mx-auto max-w-7xl text-center w-full"
+          initial="hidden"
+          animate="visible"
+          variants={staggerContainer}
+        >
+          <motion.div variants={fadeInUp} className="mb-6 inline-flex items-center gap-2 rounded-full border border-bone/10 bg-coal/50 px-4 py-1.5 backdrop-blur-sm">
             <span className="blink-dot h-1.5 w-1.5 rounded-full bg-mint" />
             <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-smoke">
               Tiger's Lair Academy · est. Benin City
             </span>
-          </div>
+          </motion.div>
           
-          <h1 className="font-display text-5xl font-extrabold tracking-tight text-bone sm:text-7xl lg:text-8xl drop-shadow-lg">
+          <motion.h1 variants={fadeInUp} className="font-display text-5xl font-extrabold tracking-tight text-bone sm:text-7xl lg:text-8xl drop-shadow-lg">
             Learn. Build. <span className="text-amber">Thrive.</span>
-          </h1>
+          </motion.h1>
           
-          <p className="mx-auto mt-6 max-w-2xl text-lg text-smoke sm:text-xl drop-shadow-md">
+          <motion.p variants={fadeInUp} className="mx-auto mt-6 max-w-2xl text-lg text-smoke sm:text-xl drop-shadow-md">
             An AI powered educational ecosystem combining practical courses, 1-on-1 mentorship, and digital therapy. 
             We do not just teach skills. We build resilient minds.
-          </p>
+          </motion.p>
 
-          <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
+          <motion.div variants={fadeInUp} className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <button
               onClick={() => go({ view: "courses" })}
               className="stripe-btn rounded-md bg-amber px-8 py-4 font-display text-sm font-extrabold uppercase tracking-widest text-ink transition-transform hover:-translate-y-0.5 shadow-lg"
@@ -55,22 +88,34 @@ export default function Home() {
             >
               Join the Lair
             </button>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       </section>
 
       {/* View the Student's Lair (User Flow) */}
       <section id="flow" className="border-y border-bone/10 bg-[#120c05] py-24 px-5 sm:px-8">
         <div className="mx-auto max-w-7xl">
-          <div className="mb-16 text-center">
+          <motion.div 
+            className="mb-16 text-center"
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: "-100px" }}
+            variants={fadeInUp}
+          >
             <p className="font-mono text-xs uppercase tracking-[0.3em] text-amber mb-3">The Journey</p>
             <h2 className="font-display text-4xl font-extrabold text-bone sm:text-5xl">View the Student's Lair</h2>
             <p className="mt-4 max-w-2xl mx-auto text-smoke">
               A seamless flow from enrollment to mastery. Here is how you engage with the platform.
             </p>
-          </div>
+          </motion.div>
 
-          <div className="grid gap-8 md:grid-cols-3">
+          <motion.div 
+            className="grid gap-8 md:grid-cols-3"
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: "-100px" }}
+            variants={staggerContainer}
+          >
             {[
               {
                 step: "01",
@@ -88,19 +133,29 @@ export default function Home() {
                 desc: "Monitor your progress on the web dashboard. Book counseling sessions, attend community meetups, and earn your certificate upon completion."
               }
             ].map((item) => (
-              <div key={item.step} className="card-lift rounded-xl border border-bone/10 bg-coal p-8">
+              <motion.div 
+                key={item.step} 
+                variants={fadeInUp}
+                className="card-lift rounded-xl border border-bone/10 bg-coal p-8 hover:border-amber/30 transition-colors"
+              >
                 <span className="font-mono text-4xl font-bold text-amber/20">{item.step}</span>
                 <h3 className="mt-4 font-display text-xl font-bold text-bone">{item.title}</h3>
                 <p className="mt-3 text-sm leading-relaxed text-smoke">{item.desc}</p>
-              </div>
+              </motion.div>
             ))}
-          </div>
+          </motion.div>
         </div>
       </section>
 
       {/* Catalogue Preview */}
       <section className="py-24 px-5 sm:px-8">
-        <div className="mx-auto max-w-7xl text-center">
+        <motion.div 
+          className="mx-auto max-w-7xl text-center"
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: "-100px" }}
+          variants={fadeInUp}
+        >
           <p className="font-mono text-xs uppercase tracking-[0.3em] text-amber mb-3">The Curriculum</p>
           <h2 className="font-display text-4xl font-extrabold text-bone sm:text-5xl">All Tracks in One Den</h2>
           <p className="mt-4 max-w-2xl mx-auto text-smoke">
@@ -108,11 +163,11 @@ export default function Home() {
           </p>
           <button
             onClick={() => go({ view: "courses" })}
-            className="mt-10 rounded-md border border-bone/20 px-8 py-3 font-display text-sm font-extrabold uppercase tracking-widest text-bone hover:bg-bone/5"
+            className="mt-10 rounded-md border border-bone/20 px-8 py-3 font-display text-sm font-extrabold uppercase tracking-widest text-bone hover:bg-bone/5 transition-colors"
           >
             View Full Catalogue →
           </button>
-        </div>
+        </motion.div>
       </section>
 
       {/* Why Pick the Lair */}
@@ -126,12 +181,24 @@ export default function Home() {
         <div className="absolute inset-0 bg-[#120c05]/80" />
         
         <div className="relative mx-auto max-w-7xl">
-          <div className="mb-16 text-center">
+          <motion.div 
+            className="mb-16 text-center"
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: "-100px" }}
+            variants={fadeInUp}
+          >
             <p className="font-mono text-xs uppercase tracking-[0.3em] text-amber mb-3">The Advantage</p>
             <h2 className="font-display text-4xl font-extrabold text-bone sm:text-5xl">Why Pick the Lair?</h2>
-          </div>
+          </motion.div>
 
-          <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+          <motion.div 
+            className="grid gap-8 md:grid-cols-2 lg:grid-cols-3"
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: "-100px" }}
+            variants={staggerContainer}
+          >
             {[
               {
                 icon: <GraduationCap className="h-8 w-8 text-amber" />,
@@ -164,21 +231,37 @@ export default function Home() {
                 desc: "Complete your track, pass the gate quiz, and receive a verifiable certificate to showcase your new skills to employers or clients."
               }
             ].map((item) => (
-              <div key={item.title} className="rounded-xl border border-bone/10 bg-coal p-6 backdrop-blur-sm bg-coal/80">
-                <div className="mb-4">{item.icon}</div>
+              <motion.div 
+                key={item.title} 
+                variants={fadeInUp}
+                className="rounded-xl border border-bone/10 bg-coal p-6 backdrop-blur-sm bg-coal/80 hover:border-amber/30 transition-colors group"
+              >
+                <motion.div 
+                  className="mb-4"
+                  variants={hoverScale}
+                  initial="rest"
+                  whileHover="hover"
+                >
+                  {item.icon}
+                </motion.div>
                 <h3 className="font-display text-lg font-bold text-bone">{item.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-smoke">{item.desc}</p>
-              </div>
+              </motion.div>
             ))}
-          </div>
+          </motion.div>
         </div>
       </section>
 
       {/* Founder & Philosophy */}
       <section className="py-24 px-5 sm:px-8">
-        <div className="mx-auto max-w-4xl text-center">
+        <motion.div 
+          className="mx-auto max-w-4xl text-center"
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: "-100px" }}
+          variants={fadeInUp}
+        >
           <div className="mb-8 flex justify-center">
-            {/* Replaced IconClaw with Founder Image */}
             <img 
               src={founderEhis} 
               alt="Ehis O. Ferguson, Founder of Tiger's Lair Academy" 
@@ -193,33 +276,50 @@ export default function Home() {
             Founded by Ehis O. Ferguson, the academy is designed to bridge the gap between theoretical knowledge and practical application, 
             ensuring every student is equipped to thrive in the digital economy.
           </p>
-        </div>
+        </motion.div>
       </section>
 
       {/* 4 Cohorts */}
       <section className="border-y border-bone/10 bg-[#120c05] py-24 px-5 sm:px-8">
         <div className="mx-auto max-w-7xl text-center">
-          <p className="font-mono text-xs uppercase tracking-[0.3em] text-amber mb-3">The Cycle</p>
-          <h2 className="font-display text-4xl font-extrabold text-bone sm:text-5xl">4 Cohorts. 4 Quarters. 4 Elements.</h2>
-          <p className="mt-4 max-w-2xl mx-auto text-smoke">
-            The year is divided into four distinct intakes, each aligned with an element to guide your learning journey.
-          </p>
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: "-100px" }}
+            variants={fadeInUp}
+          >
+            <p className="font-mono text-xs uppercase tracking-[0.3em] text-amber mb-3">The Cycle</p>
+            <h2 className="font-display text-4xl font-extrabold text-bone sm:text-5xl">4 Cohorts. 4 Quarters. 4 Elements.</h2>
+            <p className="mt-4 max-w-2xl mx-auto text-smoke">
+              The year is divided into four distinct intakes, each aligned with an element to guide your learning journey.
+            </p>
+          </motion.div>
 
-          <div className="mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <motion.div 
+            className="mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-4"
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: "-100px" }}
+            variants={staggerContainer}
+          >
             {[
               { q: "Q1", el: "Claw", c: "bg-amber/10 text-amber", desc: "Groundwork & Foundations. Building the core skills." },
               { q: "Q2", el: "Claw", c: "bg-tgsky/10 text-tgsky", desc: "Flow & Adaptation. Exploring data and business logic." },
               { q: "Q3", el: "Claw", c: "bg-ember/10 text-ember", desc: "Intensity & Execution. Deep dives into hacking and security." },
               { q: "Q4", el: "Claw", c: "bg-mint/10 text-mint", desc: "Expansion & Mastery. Capstones, mentorship, and graduation." }
             ].map((item) => (
-              <div key={item.q} className="rounded-xl border border-bone/10 bg-coal p-6 text-left">
+              <motion.div 
+                key={item.q} 
+                variants={fadeInUp}
+                className="rounded-xl border border-bone/10 bg-coal p-6 text-left hover:border-amber/30 transition-colors"
+              >
                 <div className={`mb-4 inline-block rounded px-2 py-1 font-mono text-xs font-bold uppercase ${item.c}`}>
                   {item.q} · {item.el}
                 </div>
                 <p className="text-sm text-smoke">{item.desc}</p>
-              </div>
+              </motion.div>
             ))}
-          </div>
+          </motion.div>
         </div>
       </section>
 
@@ -232,12 +332,24 @@ export default function Home() {
         <div className="absolute inset-0 bg-coal/90" />
         
         <div className="relative mx-auto max-w-7xl">
-          <div className="mb-16 text-center">
+          <motion.div 
+            className="mb-16 text-center"
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: "-100px" }}
+            variants={fadeInUp}
+          >
             <p className="font-mono text-xs uppercase tracking-[0.3em] text-amber mb-3">The Ecosystem</p>
             <h2 className="font-display text-4xl font-extrabold text-bone sm:text-5xl">Platform Highlights</h2>
-          </div>
+          </motion.div>
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <motion.div 
+            className="grid gap-4 md:grid-cols-2"
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: "-100px" }}
+            variants={staggerContainer}
+          >
             {[
               "Real-time progress tracking across all enrolled courses.",
               "Direct Telegram integration for daily lesson delivery.",
@@ -248,12 +360,18 @@ export default function Home() {
               "Verifiable digital certificates upon course completion.",
               "Admin dashboard for seamless course and mentor management."
             ].map((feature, i) => (
-              <div key={i} className="flex items-start gap-3 rounded-lg border border-bone/5 bg-coal p-4">
-                <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-mint/20 text-[10px] font-bold text-mint">✓</span>
+              <motion.div 
+                key={i} 
+                variants={fadeInUp}
+                className="flex items-start gap-3 rounded-lg border border-bone/5 bg-coal p-4 hover:border-amber/20 transition-colors"
+              >
+                <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-mint/20 text-mint">
+                  <Check className="h-3 w-3" />
+                </span>
                 <p className="text-sm text-bone">{feature}</p>
-              </div>
+              </motion.div>
             ))}
-          </div>
+          </motion.div>
         </div>
       </section>
     </div>

@@ -8,6 +8,7 @@ import {
   GraduationCap, UserCheck, BookOpen, Users, Shield, 
   ExternalLink, CheckCircle, Clock, AlertTriangle, Trash2, Pencil, Search, Plus
 } from "lucide-react";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 
 export default function AdminPanel() {
   const { user, go, toast } = useStore();
@@ -32,7 +33,9 @@ export default function AdminPanel() {
     totalStudents: 0, 
     totalCourses: 0, 
     pendingApplications: 0, 
-    recentStudents: [] 
+    recentStudents: [],
+    completionRate: 0,
+    topCourses: []
   });
 
   const [newMentor, setNewMentor] = useState({ name: "", bio: "", specialties: "tech", hourlyRate: 0, imageUrl: "" });
@@ -321,6 +324,57 @@ export default function AdminPanel() {
               <p className="text-xs font-bold uppercase tracking-widest text-smoke mb-2">Pending Mentorships</p>
               <p className="font-display text-3xl font-extrabold text-ember">{analytics.pendingApplications}</p>
               <p className="text-xs text-smoke mt-2">Awaiting your review</p>
+            </div>
+          </div>
+
+          {/* ✅ NEW: Advanced Analytics Charts */}
+          <div className="grid gap-6 lg:grid-cols-2">
+            {/* Completion Rate Donut Chart */}
+            <div className="rounded-xl border border-bone/10 bg-coal p-6">
+              <h3 className="font-display text-lg font-bold text-amber mb-4">Course Completion Rate</h3>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={[
+                        { name: 'Completed', value: analytics.completionRate || 0 },
+                        { name: 'In Progress', value: 100 - (analytics.completionRate || 0) }
+                      ]}
+                      cx="50%" cy="50%" innerRadius={60} outerRadius={80}
+                      paddingAngle={5} dataKey="value"
+                    >
+                      <Cell fill="#f59e0b" /> {/* Amber */}
+                      <Cell fill="#334155" /> {/* Slate */}
+                    </Pie>
+                    <Tooltip contentStyle={{ backgroundColor: '#1a120a', border: '1px solid #334155', color: '#e2e8f0' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <p className="text-center text-2xl font-bold text-amber">{analytics.completionRate || 0}%</p>
+                <p className="text-center text-xs text-smoke">of enrolled students complete their courses</p>
+              </div>
+            </div>
+
+            {/* Top Courses List */}
+            <div className="rounded-xl border border-bone/10 bg-coal p-6">
+              <h3 className="font-display text-lg font-bold text-amber mb-4">Top Enrolled Courses</h3>
+              <div className="space-y-4">
+                {analytics.topCourses?.length > 0 ? analytics.topCourses.map((course: any, idx: number) => (
+                  <div key={course.code || idx} className="flex items-center justify-between p-3 rounded-lg bg-ink/50 border border-bone/5">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-amber/20 text-amber font-bold text-sm">
+                        {idx + 1}
+                      </span>
+                      <div>
+                        <p className="font-bold text-bone text-sm">{course.title}</p>
+                        <p className="text-xs text-smoke">{course.code}</p>
+                      </div>
+                    </div>
+                    <span className="text-sm font-bold text-mint">{course.enrollments} students</span>
+                  </div>
+                )) : (
+                  <p className="text-sm text-smoke text-center py-8">No course enrollment data yet.</p>
+                )}
+              </div>
             </div>
           </div>
 

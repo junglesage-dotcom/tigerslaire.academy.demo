@@ -849,14 +849,32 @@ export default {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
         if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
-        const [revenueData, studentsData, coursesData, appsData, recentUsers] = await Promise.all([
+        
+        const [revenueData, studentsData, coursesData, appsData, recentUsers, enrollmentStats, topCourses] = await Promise.all([
           env.DB.prepare("SELECT SUM(amount) as total FROM payments WHERE status = 'paid'").first(),
           env.DB.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'student'").first(),
           env.DB.prepare("SELECT COUNT(*) as count FROM courses").first(),
           env.DB.prepare("SELECT COUNT(*) as count FROM mentorship_applications WHERE status = 'pending'").first(),
-          env.DB.prepare("SELECT id, name, email, joined_at FROM users WHERE role = 'student' ORDER BY joined_at DESC LIMIT 5").all()
+          env.DB.prepare("SELECT id, name, email, joined_at FROM users WHERE role = 'student' ORDER BY joined_at DESC LIMIT 5").all(),
+          env.DB.prepare("SELECT COUNT(*) as total_enrollments, COALESCE(SUM(CASE WHEN quiz_passed = 1 THEN 1 ELSE 0 END), 0) as completed_courses FROM enrollments").first(),
+          env.DB.prepare("SELECT c.title, c.code, COUNT(e.user_id) as enrollments FROM courses c LEFT JOIN enrollments e ON c.id = e.course_id GROUP BY c.id ORDER BY enrollments DESC LIMIT 3").all()
         ]);
-        return json({ data: { totalRevenue: revenueData.total || 0, totalStudents: studentsData.count || 0, totalCourses: coursesData.count || 0, pendingApplications: appsData.count || 0, recentStudents: recentUsers.results || [] } });
+
+        const completionRate = enrollmentStats.total_enrollments > 0 
+          ? Math.round(((enrollmentStats.completed_courses || 0) / enrollmentStats.total_enrollments) * 100) 
+          : 0;
+
+        return json({ 
+          data: { 
+            totalRevenue: revenueData.total || 0, 
+            totalStudents: studentsData.count || 0, 
+            totalCourses: coursesData.count || 0, 
+            pendingApplications: appsData.count || 0, 
+            recentStudents: recentUsers.results || [],
+            completionRate: completionRate,
+            topCourses: topCourses.results || []
+          } 
+        });
       }
 
       if (path === '/api/admin/student-progress' && method === 'GET') {
