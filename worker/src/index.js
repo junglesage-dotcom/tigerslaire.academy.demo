@@ -819,7 +819,11 @@ export default {
         if (!token) return error('Unauthorized', 401);
         const { title, description, format, meetingLink, location, scheduledAt, duration, maxAttendees, mentorId } = await request.json();
         const id = 'meet_' + uid();
-        await env.DB.prepare('INSERT INTO meetups (id, title, description, mentor_id, format, meeting_link, location, scheduled_at, duration_minutes, max_attendees, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(id, title, description, mentorId, format, meetingLink, location, scheduledAt, duration, maxAttendees, Date.now()).run();
+        
+        // ✅ FIXED: Convert empty mentorId to null to prevent FK constraint errors
+        const validMentorId = mentorId && mentorId.trim() !== '' ? mentorId : null;
+        
+        await env.DB.prepare('INSERT INTO meetups (id, title, description, mentor_id, format, meeting_link, location, scheduled_at, duration_minutes, max_attendees, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(id, title, description, validMentorId, format, meetingLink, location, scheduledAt, duration, maxAttendees, Date.now()).run();
         return json({ data: { id } });
       }
 

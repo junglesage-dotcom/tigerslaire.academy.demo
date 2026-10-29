@@ -24,7 +24,7 @@ export default function AdminPanel() {
   const [users, setUsers] = useState<any[]>([]);
   const [progress, setProgress] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
-  const [meetups, setMeetups] = useState<any[]>([]); // ✅ NEW
+  const [meetups, setMeetups] = useState<any[]>([]);
 
   const [userSearch, setUserSearch] = useState("");
   const [courseSearch, setCourseSearch] = useState("");
@@ -46,7 +46,6 @@ export default function AdminPanel() {
     weeks: 8, price: 0, priceUsd: 0, hue: "#ffa41b", icon: "python", summary: "", outcomes: "", skills: "", channel: ""
   });
   
-  // ✅ NEW: Meetup Form State
   const [newMeetup, setNewMeetup] = useState({
     title: "", description: "", format: "Virtual", meetingLink: "", location: "", 
     scheduledAt: "", duration: 60, maxAttendees: 20, mentorId: ""
@@ -84,7 +83,7 @@ export default function AdminPanel() {
         api.getUsers(),
         api.getStudentProgress(),
         api.getAuditLogs(),
-        api.getMeetups() // ✅ NEW
+        api.getMeetups()
       ]);
       
       setAnalytics(analyticsRes.data);
@@ -97,7 +96,7 @@ export default function AdminPanel() {
       setUsers(usersRes.data);
       setProgress(progressRes.data);
       setAuditLogs(auditRes.data);
-      setMeetups(meetupsRes.data || []); // ✅ NEW
+      setMeetups(meetupsRes.data || []);
     } catch (e) {
       toast("Failed to load admin data");
     }
@@ -270,15 +269,15 @@ export default function AdminPanel() {
     });
   };
 
-  // ✅ NEW: Handle Meetup Creation
   const handleAddMeetup = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await api.createMeetup({
         ...sanitizeObject(newMeetup),
-        scheduledAt: new Date(newMeetup.scheduledAt).getTime(), // Convert to timestamp
+        scheduledAt: new Date(newMeetup.scheduledAt).getTime(),
         duration: parseInt(newMeetup.duration as any) || 60,
-        maxAttendees: parseInt(newMeetup.maxAttendees as any) || 20
+        maxAttendees: parseInt(newMeetup.maxAttendees as any) || 20,
+        mentorId: newMeetup.mentorId === "" ? null : newMeetup.mentorId
       });
       toast("Meetup scheduled successfully!");
       setNewMeetup({ title: "", description: "", format: "Virtual", meetingLink: "", location: "", scheduledAt: "", duration: 60, maxAttendees: 20, mentorId: "" });
@@ -325,7 +324,7 @@ export default function AdminPanel() {
     { id: 'mentors', label: 'Mentors', count: mentors.length, icon: <GraduationCap className="h-4 w-4" /> },
     { id: 'instructors', label: 'Instructors', count: instructors.length, icon: <UserCheck className="h-4 w-4" /> },
     { id: 'courses', label: 'Courses', count: courses.length, icon: <BookOpen className="h-4 w-4" /> },
-    { id: 'meetups', label: 'Meetups', count: meetups.length, icon: <Users className="h-4 w-4" /> }, // ✅ NEW
+    { id: 'meetups', label: 'Meetups', count: meetups.length, icon: <Users className="h-4 w-4" /> },
     { id: 'users', label: 'Users', count: users.length, icon: <Users className="h-4 w-4" /> },
     { id: 'audit', label: 'Audit Logs', icon: <Shield className="h-4 w-4" /> },
   ];
@@ -708,10 +707,8 @@ export default function AdminPanel() {
         </div>
       )}
 
-      {/* ✅ NEW: Meetups Tab */}
       {activeTab === 'meetups' && (
         <div className="grid gap-6 lg:grid-cols-2">
-          {/* Create Meetup Form */}
           <div className="rounded-lg border border-bone/10 bg-coal p-6">
             <h2 className="font-display text-xl font-bold text-amber mb-4">Schedule New Meetup</h2>
             <form onSubmit={handleAddMeetup} className="space-y-3">
@@ -741,11 +738,24 @@ export default function AdminPanel() {
                 </div>
               </div>
 
+              <div>
+                <label className="text-[10px] font-bold uppercase text-smoke block mb-1">Host / Mentor (Optional)</label>
+                <select 
+                  className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" 
+                  value={newMeetup.mentorId} 
+                  onChange={e => setNewMeetup({...newMeetup, mentorId: e.target.value})}
+                >
+                  <option value="">None (General Meetup)</option>
+                  {mentors.map(m => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+              </div>
+
               <button type="submit" className="w-full rounded bg-mint py-2 text-xs font-bold uppercase text-ink hover:bg-mint/90 transition-colors flex items-center justify-center gap-1 mt-2"><Plus className="h-3 w-3" /> Schedule Meetup</button>
             </form>
           </div>
 
-          {/* Existing Meetups List */}
           <div className="rounded-lg border border-bone/10 bg-coal p-6">
             <h2 className="font-display text-xl font-bold text-amber mb-4">Upcoming & Past Meetups</h2>
             <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
