@@ -846,6 +846,24 @@ export default {
         return json({ data: rsvps.results });
       }
 
+      // ✅ NEW: Get Attendees for a Specific Meetup (Admin Only)
+      if (path.match(/^\/api\/admin\/meetups\/[^/]+\/attendees$/) && method === 'GET') {
+        const token = getToken();
+        const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
+        if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
+        
+        const meetupId = parts[3];
+        const attendees = await env.DB.prepare(`
+          SELECT m.status, m.rsvp_at, u.id, u.name, u.email 
+          FROM meetup_attendees m 
+          JOIN users u ON m.user_id = u.id 
+          WHERE m.meetup_id = ? 
+          ORDER BY m.rsvp_at DESC
+        `).bind(meetupId).all();
+        
+        return json({ data: attendees.results });
+      }
+
       // ✅ NEW: Delete Meetup (Admin Only)
       if (path.match(/^\/api\/meetups\/[^/]+$/) && method === 'DELETE') {
         const token = getToken();

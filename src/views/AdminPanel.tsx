@@ -26,6 +26,11 @@ export default function AdminPanel() {
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [meetups, setMeetups] = useState<any[]>([]);
 
+  // ✅ NEW: Meetup Attendees State
+  const [expandedMeetup, setExpandedMeetup] = useState<string | null>(null);
+  const [meetupAttendees, setMeetupAttendees] = useState<Record<string, any[]>>({});
+  const [loadingAttendees, setLoadingAttendees] = useState<string | null>(null);
+
   const [userSearch, setUserSearch] = useState("");
   const [courseSearch, setCourseSearch] = useState("");
 
@@ -308,6 +313,26 @@ export default function AdminPanel() {
         }
       }
     });
+  };
+
+  // ✅ NEW: Load Attendees for a Specific Meetup
+  const loadAttendees = async (meetupId: string) => {
+    if (meetupAttendees[meetupId]) {
+      // Already loaded, just toggle visibility
+      setExpandedMeetup(expandedMeetup === meetupId ? null : meetupId);
+      return;
+    }
+    
+    setLoadingAttendees(meetupId);
+    try {
+      const res = await api.getMeetupAttendees(meetupId);
+      setMeetupAttendees(prev => ({ ...prev, [meetupId]: res.data }));
+      setExpandedMeetup(meetupId);
+    } catch (e: any) {
+      toast(e.message || "Failed to load attendees");
+    } finally {
+      setLoadingAttendees(null);
+    }
   };
 
   const tabs: { 
@@ -756,6 +781,7 @@ export default function AdminPanel() {
             </form>
           </div>
 
+          {/* ✅ UPDATED: Existing Meetups List with Attendees Viewer */}
           <div className="rounded-lg border border-bone/10 bg-coal p-6">
             <h2 className="font-display text-xl font-bold text-amber mb-4">Upcoming & Past Meetups</h2>
             <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
@@ -764,6 +790,10 @@ export default function AdminPanel() {
               ) : (
                 meetups.sort((a, b) => b.scheduled_at - a.scheduled_at).map((m) => {
                   const isPast = m.scheduled_at < Date.now();
+                  const attendees = meetupAttendees[m.id] || [];
+                  const isExpanded = expandedMeetup === m.id;
+                  const isLoading = loadingAttendees === m.id;
+
                   return (
                     <div key={m.id} className={`rounded border p-3 flex flex-col gap-2 ${isPast ? 'border-bone/5 bg-ink/30 opacity-70' : 'border-bone/5 bg-ink'}`}>
                       <div className="flex justify-between items-start">
@@ -774,7 +804,54 @@ export default function AdminPanel() {
                           </p>
                           <p className="text-xs text-amber mt-1">{m.format} {m.format === 'Virtual' && m.meeting_link ? `· Link Available` : ''}</p>
                         </div>
-                        <button onClick={() => promptDeleteMeetup(m.id, m.title)} className="shrink-0 text-xs text-alert hover:underline font-bold flex items-center gap-1"><Trash2 className="h-3 w-3" /> Cancel</button>
+                        <button 
+                          onClick={() => promptDeleteMeetup(m.id, m.title)} 
+                          className="shrink-0 text-xs text-alert hover:underline font-bold flex items-center gap-1"
+                        >
+                          <Trash2 className="h-3 w-3" /> Cancel
+                        </button>
+                      </div>
+
+                      {/* ✅ NEW: Attendees Toggle & List */}
+                      <div className="mt-2 pt-2 border-t border-bone/10">
+                        <button 
+                          onClick={() => loadAttendees(m.id)}
+                          disabled={isLoading}
+                          className="text-xs font-bold text-tgsky hover:text-tgsky/80 flex items-center gap-1 transition-colors"
+                        >
+                          {isLoading ? (
+                            <span className="animate-pulse">Loading attendees...</span>
+                          ) : (
+                            <>
+                              <Users className="h-3 w-3" /> 
+                              View Attendees ({attendees.length}) 
+                              <span className={`transform transition-transform ${isExpanded ? 'rotate-180' : ''}`}>▼</span>
+                            </>
+                          )}
+                        </button>
+
+                        {isExpanded && (
+                          <div className="mt-2 space-y-1 max-h-40 overflow-y-auto pr-1">
+                            {attendees.length === 0 ? (
+                              <p className="text-xs text-smoke italic py-1">No students have RSVP'd yet.</p>
+                            ) : (
+                              attendees.map((att: any, idx: number) => (
+                                <div key={idx} className="flex items-center justify-between text-xs p-1.5 rounded bg-coal/50 border border-bone/5">
+                                  <div>
+                                    <p className="font-bold text-bone">{att.name}</p>
+                                    <p className="text-smoke">{att.email}</p>
+                                  </div>
+                                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                    att.status === 'going' ? 'bg-mint/20 text-mint' : 
+                                    att.status === 'maybe' ? 'bg-amber/20 text-amber' : 'bg-alert/20 text-alert'
+                                  }`}>
+                                    {att.status}
+                                  </span>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );

@@ -137,9 +137,9 @@ export const api = {
     }),
   getMyRsvps: () => request<{ data: any[] }>('/api/meetups/my-rsvps'),
   
-  // ✅ NEW: Delete Meetup (Admin Only)
-  deleteMeetup: (id: string) =>
-    request<{ success: boolean }>(`/api/meetups/${id}`, { method: 'DELETE' }),
+  // ✅ NEW: Get Attendees for a Specific Meetup (Admin Only)
+  getMeetupAttendees: (meetupId: string) => 
+    request<{ data: any[] }>(`/api/admin/meetups/${meetupId}/attendees`),
 
   addMentor: (data: any) =>
     request<{ data: any }>('/api/admin/mentors', {
