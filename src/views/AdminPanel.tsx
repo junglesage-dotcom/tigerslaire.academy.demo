@@ -13,7 +13,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 export default function AdminPanel() {
   const { user, go, toast } = useStore();
   
-  const [activeTab, setActiveTab] = useState<'analytics' | 'progress' | 'applications' | 'payments' | 'installments' | 'mentors' | 'instructors' | 'courses' | 'users' | 'audit'>('analytics');
+  const [activeTab, setActiveTab] = useState<'analytics' | 'progress' | 'applications' | 'payments' | 'installments' | 'mentors' | 'instructors' | 'courses' | 'users' | 'audit' | 'meetups'>('analytics');
   
   const [apps, setApps] = useState<any[]>([]);
   const [payments, setPayments] = useState<any[]>([]);
@@ -24,6 +24,7 @@ export default function AdminPanel() {
   const [users, setUsers] = useState<any[]>([]);
   const [progress, setProgress] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [meetups, setMeetups] = useState<any[]>([]); // ✅ NEW
 
   const [userSearch, setUserSearch] = useState("");
   const [courseSearch, setCourseSearch] = useState("");
@@ -43,6 +44,12 @@ export default function AdminPanel() {
   const [newCourse, setNewCourse] = useState({
     code: "", title: "", tagline: "", level: "Beginner", path: "Beginner → Intermediate",
     weeks: 8, price: 0, priceUsd: 0, hue: "#ffa41b", icon: "python", summary: "", outcomes: "", skills: "", channel: ""
+  });
+  
+  // ✅ NEW: Meetup Form State
+  const [newMeetup, setNewMeetup] = useState({
+    title: "", description: "", format: "Virtual", meetingLink: "", location: "", 
+    scheduledAt: "", duration: 60, maxAttendees: 20, mentorId: ""
   });
 
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -66,7 +73,7 @@ export default function AdminPanel() {
 
   const loadAll = async () => {
     try {
-      const [analyticsRes, appsRes, payRes, adminInstallmentsRes, mentorsRes, instructorsRes, coursesRes, usersRes, progressRes, auditRes] = await Promise.all([
+      const [analyticsRes, appsRes, payRes, adminInstallmentsRes, mentorsRes, instructorsRes, coursesRes, usersRes, progressRes, auditRes, meetupsRes] = await Promise.all([
         api.getAnalytics(),
         api.getAllApplications(),
         api.getPendingPayments(),
@@ -76,7 +83,8 @@ export default function AdminPanel() {
         api.getCourses(),
         api.getUsers(),
         api.getStudentProgress(),
-        api.getAuditLogs()
+        api.getAuditLogs(),
+        api.getMeetups() // ✅ NEW
       ]);
       
       setAnalytics(analyticsRes.data);
@@ -89,6 +97,7 @@ export default function AdminPanel() {
       setUsers(usersRes.data);
       setProgress(progressRes.data);
       setAuditLogs(auditRes.data);
+      setMeetups(meetupsRes.data || []); // ✅ NEW
     } catch (e) {
       toast("Failed to load admin data");
     }
@@ -261,6 +270,47 @@ export default function AdminPanel() {
     });
   };
 
+  // ✅ NEW: Handle Meetup Creation
+  const handleAddMeetup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.createMeetup({
+        ...sanitizeObject(newMeetup),
+        scheduledAt: new Date(newMeetup.scheduledAt).getTime(), // Convert to timestamp
+        duration: parseInt(newMeetup.duration as any) || 60,
+        maxAttendees: parseInt(newMeetup.maxAttendees as any) || 20
+      });
+      toast("Meetup scheduled successfully!");
+      setNewMeetup({ title: "", description: "", format: "Virtual", meetingLink: "", location: "", scheduledAt: "", duration: 60, maxAttendees: 20, mentorId: "" });
+      loadAll();
+    } catch (e: any) {
+      toast(e.message);
+    }
+  };
+
+  const promptDeleteMeetup = (id: string, title: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: "Cancel Meetup",
+      message: `Are you sure you want to cancel and delete "${title}"? This will remove all associated RSVPs.`,
+      isDestructive: true,
+      onConfirm: async () => {
+        setIsDialogLoading(true);
+        try {
+          await api.deleteMeetup(id);
+          toast("Meetup canceled and deleted");
+          await new Promise(r => setTimeout(r, 300));
+          loadAll();
+        } catch (e: any) {
+          toast(e.message);
+        } finally {
+          setIsDialogLoading(false);
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
+  };
+
   const tabs: { 
     id: typeof activeTab; 
     label: string; 
@@ -275,6 +325,7 @@ export default function AdminPanel() {
     { id: 'mentors', label: 'Mentors', count: mentors.length, icon: <GraduationCap className="h-4 w-4" /> },
     { id: 'instructors', label: 'Instructors', count: instructors.length, icon: <UserCheck className="h-4 w-4" /> },
     { id: 'courses', label: 'Courses', count: courses.length, icon: <BookOpen className="h-4 w-4" /> },
+    { id: 'meetups', label: 'Meetups', count: meetups.length, icon: <Users className="h-4 w-4" /> }, // ✅ NEW
     { id: 'users', label: 'Users', count: users.length, icon: <Users className="h-4 w-4" /> },
     { id: 'audit', label: 'Audit Logs', icon: <Shield className="h-4 w-4" /> },
   ];
@@ -327,9 +378,7 @@ export default function AdminPanel() {
             </div>
           </div>
 
-          {/* ✅ NEW: Advanced Analytics Charts */}
           <div className="grid gap-6 lg:grid-cols-2">
-            {/* Completion Rate Donut Chart */}
             <div className="rounded-xl border border-bone/10 bg-coal p-6">
               <h3 className="font-display text-lg font-bold text-amber mb-4">Course Completion Rate</h3>
               <div className="h-64">
@@ -343,8 +392,8 @@ export default function AdminPanel() {
                       cx="50%" cy="50%" innerRadius={60} outerRadius={80}
                       paddingAngle={5} dataKey="value"
                     >
-                      <Cell fill="#f59e0b" /> {/* Amber */}
-                      <Cell fill="#334155" /> {/* Slate */}
+                      <Cell fill="#f59e0b" />
+                      <Cell fill="#334155" />
                     </Pie>
                     <Tooltip contentStyle={{ backgroundColor: '#1a120a', border: '1px solid #334155', color: '#e2e8f0' }} />
                   </PieChart>
@@ -354,7 +403,6 @@ export default function AdminPanel() {
               </div>
             </div>
 
-            {/* Top Courses List */}
             <div className="rounded-xl border border-bone/10 bg-coal p-6">
               <h3 className="font-display text-lg font-bold text-amber mb-4">Top Enrolled Courses</h3>
               <div className="space-y-4">
@@ -655,6 +703,73 @@ export default function AdminPanel() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ NEW: Meetups Tab */}
+      {activeTab === 'meetups' && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Create Meetup Form */}
+          <div className="rounded-lg border border-bone/10 bg-coal p-6">
+            <h2 className="font-display text-xl font-bold text-amber mb-4">Schedule New Meetup</h2>
+            <form onSubmit={handleAddMeetup} className="space-y-3">
+              <input required placeholder="Meetup Title" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newMeetup.title} onChange={e => setNewMeetup({...newMeetup, title: e.target.value})} />
+              <textarea required placeholder="Description" rows={3} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newMeetup.description} onChange={e => setNewMeetup({...newMeetup, description: e.target.value})} />
+              
+              <div className="grid grid-cols-2 gap-3">
+                <select className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newMeetup.format} onChange={e => setNewMeetup({...newMeetup, format: e.target.value})}>
+                  <option value="Virtual">Virtual</option>
+                  <option value="In-Person">In-Person</option>
+                  <option value="Hybrid">Hybrid</option>
+                </select>
+                <input type="number" placeholder="Max Attendees" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newMeetup.maxAttendees} onChange={e => setNewMeetup({...newMeetup, maxAttendees: parseInt(e.target.value) || 0})} />
+              </div>
+
+              <input placeholder="Meeting Link (if Virtual)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newMeetup.meetingLink} onChange={e => setNewMeetup({...newMeetup, meetingLink: e.target.value})} />
+              <input placeholder="Physical Location (if In-Person)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newMeetup.location} onChange={e => setNewMeetup({...newMeetup, location: e.target.value})} />
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold uppercase text-smoke block mb-1">Date & Time</label>
+                  <input type="datetime-local" required className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newMeetup.scheduledAt} onChange={e => setNewMeetup({...newMeetup, scheduledAt: e.target.value})} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase text-smoke block mb-1">Duration (mins)</label>
+                  <input type="number" required className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newMeetup.duration} onChange={e => setNewMeetup({...newMeetup, duration: parseInt(e.target.value) || 60})} />
+                </div>
+              </div>
+
+              <button type="submit" className="w-full rounded bg-mint py-2 text-xs font-bold uppercase text-ink hover:bg-mint/90 transition-colors flex items-center justify-center gap-1 mt-2"><Plus className="h-3 w-3" /> Schedule Meetup</button>
+            </form>
+          </div>
+
+          {/* Existing Meetups List */}
+          <div className="rounded-lg border border-bone/10 bg-coal p-6">
+            <h2 className="font-display text-xl font-bold text-amber mb-4">Upcoming & Past Meetups</h2>
+            <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
+              {meetups.length === 0 ? (
+                <p className="text-sm text-smoke text-center py-8">No meetups scheduled yet.</p>
+              ) : (
+                meetups.sort((a, b) => b.scheduled_at - a.scheduled_at).map((m) => {
+                  const isPast = m.scheduled_at < Date.now();
+                  return (
+                    <div key={m.id} className={`rounded border p-3 flex flex-col gap-2 ${isPast ? 'border-bone/5 bg-ink/30 opacity-70' : 'border-bone/5 bg-ink'}`}>
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="font-bold text-bone">{m.title}</p>
+                          <p className="text-xs text-smoke mt-1">
+                            {new Date(m.scheduled_at).toLocaleDateString()} at {new Date(m.scheduled_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} · {m.duration} mins
+                          </p>
+                          <p className="text-xs text-amber mt-1">{m.format} {m.format === 'Virtual' && m.meeting_link ? `· Link Available` : ''}</p>
+                        </div>
+                        <button onClick={() => promptDeleteMeetup(m.id, m.title)} className="shrink-0 text-xs text-alert hover:underline font-bold flex items-center gap-1"><Trash2 className="h-3 w-3" /> Cancel</button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>

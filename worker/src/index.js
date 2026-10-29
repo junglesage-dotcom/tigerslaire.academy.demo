@@ -842,6 +842,18 @@ export default {
         return json({ data: rsvps.results });
       }
 
+      // ✅ NEW: Delete Meetup (Admin Only)
+      if (path.match(/^\/api\/meetups\/[^/]+$/) && method === 'DELETE') {
+        const token = getToken();
+        const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
+        if (!admin || admin.role !== 'admin') return error('Forbidden', 403);
+        const meetupId = parts[2];
+        await env.DB.prepare('DELETE FROM meetup_attendees WHERE meetup_id = ?').bind(meetupId).run();
+        await env.DB.prepare('DELETE FROM meetups WHERE id = ?').bind(meetupId).run();
+        await logAudit(env, token, 'MEETUP_DELETED', `Deleted meetup ID: ${meetupId}`);
+        return json({ success: true });
+      }
+
       // ============================================
       // ADMIN ANALYTICS & PROGRESS
       // ============================================

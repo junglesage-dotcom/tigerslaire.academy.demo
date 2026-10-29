@@ -136,6 +136,10 @@ export const api = {
       method: 'POST', body: JSON.stringify({ status })
     }),
   getMyRsvps: () => request<{ data: any[] }>('/api/meetups/my-rsvps'),
+  
+  // ✅ NEW: Delete Meetup (Admin Only)
+  deleteMeetup: (id: string) =>
+    request<{ success: boolean }>(`/api/meetups/${id}`, { method: 'DELETE' }),
 
   addMentor: (data: any) =>
     request<{ data: any }>('/api/admin/mentors', {

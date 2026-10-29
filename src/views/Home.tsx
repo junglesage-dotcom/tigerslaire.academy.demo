@@ -1,379 +1,451 @@
+import { useEffect, useState, useMemo } from "react";
+import { api } from "../lib/api";
+import { sanitizeObject } from "../lib/sanitize";
 import { useStore } from "../lib/store";
-import { IconClaw, IconPlane } from "../components/Icons";
-import { GraduationCap, UserCheck, Brain, Smartphone, Globe, Award, Check } from "lucide-react";
-import { motion } from "framer-motion";
+import ConfirmDialog from "../components/ConfirmDialog";
+import { 
+  BarChart3, TrendingUp, FileText, CreditCard, Calendar, 
+  GraduationCap, UserCheck, BookOpen, Users, Shield, 
+  ExternalLink, CheckCircle, Clock, AlertTriangle, Trash2, Pencil, Search, Plus
+} from "lucide-react";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 
-// Import your images here
-import heroBg from '../assets/images/hero-bg.png';
-import clawImage from '../assets/images/claw-image.png';
-import founderEhis from '../assets/images/founder-ehis.png';
-import clawBg from '../assets/images/claw.png';
+export default function AdminPanel() {
+  const { user, go, toast } = useStore();
+  
+  const [activeTab, setActiveTab] = useState<'analytics' | 'progress' | 'applications' | 'payments' | 'installments' | 'mentors' | 'instructors' | 'courses' | 'users' | 'audit' | 'meetups'>('analytics');
+  
+  const [apps, setApps] = useState<any[]>([]);
+  const [payments, setPayments] = useState<any[]>([]);
+  const [installments, setInstallments] = useState<any[]>([]);
+  const [mentors, setMentors] = useState<any[]>([]);
+  const [instructors, setInstructors] = useState<any[]>([]);
+  const [courses, setCourses] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+  const [progress, setProgress] = useState<any[]>([]);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [meetups, setMeetups] = useState<any[]>([]); // ✅ NEW
 
-// ============================================
-// ANIMATION VARIANTS
-// ============================================
-const fadeInUp = {
-  hidden: { opacity: 0, y: 40 },
-  visible: { 
-    opacity: 1, 
-    y: 0,
-    transition: { duration: 0.6, ease: "easeOut" }
-  }
-};
+  const [userSearch, setUserSearch] = useState("");
+  const [courseSearch, setCourseSearch] = useState("");
 
-const staggerContainer = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.15
+  const [analytics, setAnalytics] = useState<any>({ 
+    totalRevenue: 0, 
+    totalStudents: 0, 
+    totalCourses: 0, 
+    pendingApplications: 0, 
+    recentStudents: [],
+    completionRate: 0,
+    topCourses: []
+  });
+
+  const [newMentor, setNewMentor] = useState({ name: "", bio: "", specialties: "tech", hourlyRate: 0, imageUrl: "" });
+  const [newInstructor, setNewInstructor] = useState({ name: "", bio: "", courseIds: [] as string[] });
+  const [newCourse, setNewCourse] = useState({
+    code: "", title: "", tagline: "", level: "Beginner", path: "Beginner → Intermediate",
+    weeks: 8, price: 0, priceUsd: 0, hue: "#ffa41b", icon: "python", summary: "", outcomes: "", skills: "", channel: ""
+  });
+  
+  // ✅ NEW: Meetup Form State
+  const [newMeetup, setNewMeetup] = useState({
+    title: "", description: "", format: "Virtual", meetingLink: "", location: "", 
+    scheduledAt: "", duration: 60, maxAttendees: 20, mentorId: ""
+  });
+
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    isDestructive: boolean;
+    onConfirm: () => Promise<void> | void;
+  }>({ isOpen: false, title: "", message: "", isDestructive: false, onConfirm: () => {} });
+  
+  const [isDialogLoading, setIsDialogLoading] = useState(false);
+
+  useEffect(() => {
+    if (user?.role !== 'admin') {
+      toast("Access denied");
+      go({ view: "home" });
+      return;
     }
-  }
-};
+    loadAll();
+  }, [user, go, toast]);
 
-const hoverScale = {
-  rest: { scale: 1 },
-  hover: { scale: 1.1, rotate: 5, transition: { type: "spring", stiffness: 300, damping: 15 } }
-};
-
-export default function Home() {
-  const { go, setAuthOpen } = useStore();
-
-  const scrollTo = (id: string) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+  const loadAll = async () => {
+    try {
+      const [analyticsRes, appsRes, payRes, adminInstallmentsRes, mentorsRes, instructorsRes, coursesRes, usersRes, progressRes, auditRes, meetupsRes] = await Promise.all([
+        api.getAnalytics(),
+        api.getAllApplications(),
+        api.getPendingPayments(),
+        api.getAdminInstallments(),
+        api.getMentors(),
+        api.getInstructors(),
+        api.getCourses(),
+        api.getUsers(),
+        api.getStudentProgress(),
+        api.getAuditLogs(),
+        api.getMeetups() // ✅ NEW
+      ]);
+      
+      setAnalytics(analyticsRes.data);
+      setApps(appsRes.data);
+      setPayments(payRes.data);
+      setInstallments(adminInstallmentsRes.data);
+      setMentors(mentorsRes.data);
+      setInstructors(instructorsRes.data);
+      setCourses(coursesRes.data);
+      setUsers(usersRes.data);
+      setProgress(progressRes.data);
+      setAuditLogs(auditRes.data);
+      setMeetups(meetupsRes.data || []); // ✅ NEW
+    } catch (e) {
+      toast("Failed to load admin data");
+    }
   };
 
+  const filteredUsers = useMemo(() => {
+    if (!userSearch) return users;
+    const term = userSearch.toLowerCase();
+    return users.filter(u => 
+      u.name.toLowerCase().includes(term) || 
+      u.email.toLowerCase().includes(term)
+    );
+  }, [users, userSearch]);
+
+  const filteredCourses = useMemo(() => {
+    if (!courseSearch) return courses;
+    const term = courseSearch.toLowerCase();
+    return courses.filter(c =>
+      c.code.toLowerCase().includes(term) ||
+      c.title.toLowerCase().includes(term)
+    );
+  }, [courses, courseSearch]);
+
+  const handlePropose = async (appId: string, price: number) => {
+    try {
+      await api.proposePrice(appId, price, mentors[0]?.id || "mentor_primary");
+      toast("Price proposed");
+      loadAll();
+    } catch (e: any) {
+      toast(e.message);
+    }
+  };
+
+  const handleAddMentor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.addMentor({
+        ...sanitizeObject(newMentor),
+        specialties: newMentor.specialties.split(",").map(s => s.trim()),
+        userId: user?.id
+      });
+      toast("Mentor added successfully");
+      setNewMentor({ name: "", bio: "", specialties: "tech", hourlyRate: 0, imageUrl: "" });
+      loadAll();
+    } catch (e: any) {
+      toast(e.message);
+    }
+  };
+
+  const promptDeleteMentor = (id: string, name: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: "Delete Mentor",
+      message: `Are you sure you want to delete ${name}? This action cannot be undone.`,
+      isDestructive: true,
+      onConfirm: async () => {
+        setIsDialogLoading(true);
+        try {
+          await api.deleteMentor(id);
+          toast("Mentor deleted");
+          await new Promise(r => setTimeout(r, 300));
+          loadAll();
+        } catch (e: any) {
+          toast(e.message);
+        } finally {
+          setIsDialogLoading(false);
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
+  };
+
+  const handleAddInstructor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.addInstructor({
+        ...sanitizeObject(newInstructor),
+        courseIds: newInstructor.courseIds,
+        userId: user?.id
+      });
+      toast("Instructor added successfully");
+      setNewInstructor({ name: "", bio: "", courseIds: [] });
+      loadAll();
+    } catch (e: any) {
+      toast(e.message);
+    }
+  };
+
+  const promptDeleteInstructor = (id: string, name: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: "Delete Instructor",
+      message: `Are you sure you want to delete ${name}? This action cannot be undone.`,
+      isDestructive: true,
+      onConfirm: async () => {
+        setIsDialogLoading(true);
+        try {
+          await api.deleteInstructor(id);
+          toast("Instructor deleted");
+          await new Promise(r => setTimeout(r, 300));
+          loadAll();
+        } catch (e: any) {
+          toast(e.message);
+        } finally {
+          setIsDialogLoading(false);
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
+  };
+
+  const handleAddCourse = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await api.createCourse({
+        ...sanitizeObject(newCourse),
+        outcomes: newCourse.outcomes.split("\n").filter(o => o.trim()),
+        skills: newCourse.skills.split(",").map(s => s.trim())
+      });
+      toast("Course created! Redirecting to editor...");
+      go({ view: "course-editor", courseId: res.data.id } as any);
+    } catch (e: any) {
+      toast(e.message);
+    }
+  };
+
+  const promptDeleteCourse = (id: string, code: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: "Delete Course",
+      message: `Are you sure you want to delete course ${code}? This will permanently remove it and all its units, enrollments, and payments.`,
+      isDestructive: true,
+      onConfirm: async () => {
+        setIsDialogLoading(true);
+        try {
+          await api.deleteCourse(id);
+          toast("Course and all associated data deleted");
+          await new Promise(r => setTimeout(r, 500)); 
+          loadAll();
+        } catch (e: any) {
+          toast(e.message);
+        } finally {
+          setIsDialogLoading(false);
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
+  };
+
+  const promptDeleteUser = (id: string, name: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: "Delete User Account",
+      message: `Are you sure you want to permanently delete ${name}'s account? This will wipe all their enrollments, payments, and progress.`,
+      isDestructive: true,
+      onConfirm: async () => {
+        setIsDialogLoading(true);
+        try {
+          await api.deleteUser(id);
+          toast("User account and associated data deleted");
+          await new Promise(r => setTimeout(r, 500)); 
+          loadAll();
+        } catch (e: any) {
+          toast(e.message);
+        } finally {
+          setIsDialogLoading(false);
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
+  };
+
+  // ✅ NEW: Handle Meetup Creation
+  const handleAddMeetup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.createMeetup({
+        ...sanitizeObject(newMeetup),
+        scheduledAt: new Date(newMeetup.scheduledAt).getTime(), // Convert to timestamp
+        duration: parseInt(newMeetup.duration as any) || 60,
+        maxAttendees: parseInt(newMeetup.maxAttendees as any) || 20
+      });
+      toast("Meetup scheduled successfully!");
+      setNewMeetup({ title: "", description: "", format: "Virtual", meetingLink: "", location: "", scheduledAt: "", duration: 60, maxAttendees: 20, mentorId: "" });
+      loadAll();
+    } catch (e: any) {
+      toast(e.message);
+    }
+  };
+
+  const promptDeleteMeetup = (id: string, title: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: "Delete Meetup",
+      message: `Are you sure you want to cancel and delete "${title}"? This will remove all associated RSVPs.`,
+      isDestructive: true,
+      onConfirm: async () => {
+        setIsDialogLoading(true);
+        try {
+          await api.deleteMeetup(id);
+          toast("Meetup deleted");
+          await new Promise(r => setTimeout(r, 300));
+          loadAll();
+        } catch (e: any) {
+          toast(e.message);
+        } finally {
+          setIsDialogLoading(false);
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
+  };
+
+  const tabs: { 
+    id: typeof activeTab; 
+    label: string; 
+    count?: number; 
+    icon?: React.ReactNode 
+  }[] = [
+    { id: 'analytics', label: 'Analytics', icon: <BarChart3 className="h-4 w-4" /> },
+    { id: 'progress', label: 'Student Progress', count: progress.length, icon: <TrendingUp className="h-4 w-4" /> },
+    { id: 'applications', label: 'Applications', count: apps.filter(a => a.status === 'pending').length, icon: <FileText className="h-4 w-4" /> },
+    { id: 'payments', label: 'Payments', count: payments.filter(p => p.status === 'proof_submitted').length, icon: <CreditCard className="h-4 w-4" /> },
+    { id: 'installments', label: 'Installments', count: installments.length, icon: <Calendar className="h-4 w-4" /> },
+    { id: 'mentors', label: 'Mentors', count: mentors.length, icon: <GraduationCap className="h-4 w-4" /> },
+    { id: 'instructors', label: 'Instructors', count: instructors.length, icon: <UserCheck className="h-4 w-4" /> },
+    { id: 'courses', label: 'Courses', count: courses.length, icon: <BookOpen className="h-4 w-4" /> },
+    { id: 'meetups', label: 'Meetups', count: meetups.length, icon: <Users className="h-4 w-4" /> }, // ✅ NEW
+    { id: 'users', label: 'Users', count: users.length, icon: <Users className="h-4 w-4" /> },
+    { id: 'audit', label: 'Audit Logs', icon: <Shield className="h-4 w-4" /> },
+  ];
+
   return (
-    <div className="relative overflow-hidden">
-      {/* Hero Section */}
-      <section 
-        className="relative pt-24 pb-32 px-5 sm:px-8 bg-cover bg-center bg-no-repeat min-h-[80vh] flex items-center"
-        style={{ backgroundImage: `url(${heroBg})` }}
-      >
-        {/* Dark overlay to ensure text is readable over the image */}
-        <div className="absolute inset-0 bg-gradient-to-b from-coal/90 via-coal/70 to-coal/90 backdrop-blur-[2px]" />
-        
-        <motion.div 
-          className="relative mx-auto max-w-7xl text-center w-full"
-          initial="hidden"
-          animate="visible"
-          variants={staggerContainer}
-        >
-          <motion.div variants={fadeInUp} className="mb-6 inline-flex items-center gap-2 rounded-full border border-bone/10 bg-coal/50 px-4 py-1.5 backdrop-blur-sm">
-            <span className="blink-dot h-1.5 w-1.5 rounded-full bg-mint" />
-            <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-smoke">
-              Tiger's Lair Academy · est. Benin City
-            </span>
-          </motion.div>
-          
-          <motion.h1 variants={fadeInUp} className="font-display text-5xl font-extrabold tracking-tight text-bone sm:text-7xl lg:text-8xl drop-shadow-lg">
-            Learn. Build. <span className="text-amber">Thrive.</span>
-          </motion.h1>
-          
-          <motion.p variants={fadeInUp} className="mx-auto mt-6 max-w-2xl text-lg text-smoke sm:text-xl drop-shadow-md">
-            An AI powered educational ecosystem combining practical courses, 1-on-1 mentorship, and digital therapy. 
-            We do not just teach skills. We build resilient minds.
-          </motion.p>
+    <div className="mx-auto max-w-7xl px-5 py-12 sm:px-8">
+      <h1 className="font-display text-3xl font-extrabold text-bone mb-8">Admin Control Panel</h1>
 
-          <motion.div variants={fadeInUp} className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <button
-              onClick={() => go({ view: "courses" })}
-              className="stripe-btn rounded-md bg-amber px-8 py-4 font-display text-sm font-extrabold uppercase tracking-widest text-ink transition-transform hover:-translate-y-0.5 shadow-lg"
-            >
-              Explore the Den
-            </button>
-            <button
-              onClick={() => setAuthOpen(true)}
-              className="rounded-md border border-bone/20 px-8 py-4 font-display text-sm font-extrabold uppercase tracking-widest text-bone transition-colors hover:bg-bone/5 backdrop-blur-sm"
-            >
-              Join the Lair
-            </button>
-          </motion.div>
-        </motion.div>
-      </section>
-
-      {/* View the Student's Lair (User Flow) */}
-      <section id="flow" className="border-y border-bone/10 bg-[#120c05] py-24 px-5 sm:px-8">
-        <div className="mx-auto max-w-7xl">
-          <motion.div 
-            className="mb-16 text-center"
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, margin: "-100px" }}
-            variants={fadeInUp}
-          >
-            <p className="font-mono text-xs uppercase tracking-[0.3em] text-amber mb-3">The Journey</p>
-            <h2 className="font-display text-4xl font-extrabold text-bone sm:text-5xl">View the Student's Lair</h2>
-            <p className="mt-4 max-w-2xl mx-auto text-smoke">
-              A seamless flow from enrollment to mastery. Here is how you engage with the platform.
-            </p>
-          </motion.div>
-
-          <motion.div 
-            className="grid gap-8 md:grid-cols-3"
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, margin: "-100px" }}
-            variants={staggerContainer}
-          >
-            {[
-              {
-                step: "01",
-                title: "Enroll & Connect",
-                desc: "Choose your track and link your Telegram account. Your personal dashboard becomes your command center for all learning activities."
-              },
-              {
-                step: "02",
-                title: "Receive Daily Drops",
-                desc: "Lessons, PDFs, and assignments are delivered directly to your private Telegram channel. The website tracks your progress as you complete them."
-              },
-              {
-                step: "03",
-                title: "Track, Mentor & Graduate",
-                desc: "Monitor your progress on the web dashboard. Book counseling sessions, attend community meetups, and earn your certificate upon completion."
-              }
-            ].map((item) => (
-              <motion.div 
-                key={item.step} 
-                variants={fadeInUp}
-                className="card-lift rounded-xl border border-bone/10 bg-coal p-8 hover:border-amber/30 transition-colors"
-              >
-                <span className="font-mono text-4xl font-bold text-amber/20">{item.step}</span>
-                <h3 className="mt-4 font-display text-xl font-bold text-bone">{item.title}</h3>
-                <p className="mt-3 text-sm leading-relaxed text-smoke">{item.desc}</p>
-              </motion.div>
-            ))}
-          </motion.div>
-        </div>
-      </section>
-
-      {/* Catalogue Preview */}
-      <section className="py-24 px-5 sm:px-8">
-        <motion.div 
-          className="mx-auto max-w-7xl text-center"
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, margin: "-100px" }}
-          variants={fadeInUp}
-        >
-          <p className="font-mono text-xs uppercase tracking-[0.3em] text-amber mb-3">The Curriculum</p>
-          <h2 className="font-display text-4xl font-extrabold text-bone sm:text-5xl">All Tracks in One Den</h2>
-          <p className="mt-4 max-w-2xl mx-auto text-smoke">
-            From data analysis to ethical hacking, every course is built for the modern African landscape.
-          </p>
+      <div className="mb-8 flex gap-2 border-b border-bone/10 overflow-x-auto">
+        {tabs.map(t => (
           <button
-            onClick={() => go({ view: "courses" })}
-            className="mt-10 rounded-md border border-bone/20 px-8 py-3 font-display text-sm font-extrabold uppercase tracking-widest text-bone hover:bg-bone/5 transition-colors"
+            key={t.id}
+            onClick={() => setActiveTab(t.id)}
+            className={`flex items-center gap-2 px-4 py-2 font-display text-sm font-bold transition-colors whitespace-nowrap ${
+              activeTab === t.id ? 'text-amber border-b-2 border-amber' : 'text-smoke hover:text-bone'
+            }`}
           >
-            View Full Catalogue →
+            {t.icon && <span className="flex items-center">{t.icon}</span>}
+            {t.label} {t.count !== undefined && t.count > 0 && <span className="ml-1 rounded bg-amber/20 px-1.5 py-0.5 text-[10px] text-amber">{t.count}</span>}
           </button>
-        </motion.div>
-      </section>
+        ))}
+      </div>
 
-      {/* Why Pick the Lair */}
-      <section className="relative border-y border-bone/10 bg-[#120c05] py-24 px-5 sm:px-8 overflow-hidden">
-        {/* Claw Image Background with low opacity */}
-        <div 
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-95 pointer-events-none"
-          style={{ backgroundImage: `url(${clawImage})` }}
-        />
-        {/* Overlay to ensure text remains readable */}
-        <div className="absolute inset-0 bg-[#120c05]/80" />
-        
-        <div className="relative mx-auto max-w-7xl">
-          <motion.div 
-            className="mb-16 text-center"
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, margin: "-100px" }}
-            variants={fadeInUp}
-          >
-            <p className="font-mono text-xs uppercase tracking-[0.3em] text-amber mb-3">The Advantage</p>
-            <h2 className="font-display text-4xl font-extrabold text-bone sm:text-5xl">Why Pick the Lair?</h2>
-          </motion.div>
+      {/* ... [Keep all your existing activeTab === 'analytics' through 'users' blocks exactly as they were] ... */}
+      
+      {/* ✅ NEW: Meetups Tab */}
+      {activeTab === 'meetups' && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Create Meetup Form */}
+          <div className="rounded-lg border border-bone/10 bg-coal p-6">
+            <h2 className="font-display text-xl font-bold text-amber mb-4">Schedule New Meetup</h2>
+            <form onSubmit={handleAddMeetup} className="space-y-3">
+              <input required placeholder="Meetup Title" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newMeetup.title} onChange={e => setNewMeetup({...newMeetup, title: e.target.value})} />
+              <textarea required placeholder="Description" rows={3} className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newMeetup.description} onChange={e => setNewMeetup({...newMeetup, description: e.target.value})} />
+              
+              <div className="grid grid-cols-2 gap-3">
+                <select className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newMeetup.format} onChange={e => setNewMeetup({...newMeetup, format: e.target.value})}>
+                  <option value="Virtual">Virtual</option>
+                  <option value="In-Person">In-Person</option>
+                  <option value="Hybrid">Hybrid</option>
+                </select>
+                <input type="number" placeholder="Max Attendees" className="rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newMeetup.maxAttendees} onChange={e => setNewMeetup({...newMeetup, maxAttendees: parseInt(e.target.value) || 0})} />
+              </div>
 
-          <motion.div 
-            className="grid gap-8 md:grid-cols-2 lg:grid-cols-3"
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, margin: "-100px" }}
-            variants={staggerContainer}
-          >
-            {[
-              {
-                icon: <GraduationCap className="h-8 w-8 text-amber" />,
-                title: "More Than Courses",
-                desc: "We do not just dump videos on you. We provide structured learning paths with real assignments and gate quizzes to ensure mastery."
-              },
-              {
-                icon: <UserCheck className="h-8 w-8 text-amber" />,
-                title: "1-on-1 Mentorship",
-                desc: "Stuck on a concept or navigating a career transition? Get paired with a mentor in Tech, Life Skills, or Digital Therapy for personalized guidance."
-              },
-              {
-                icon: <Brain className="h-8 w-8 text-amber" />,
-                title: "Digital Therapy",
-                desc: "Burnout is real. Our digital therapy tracks help you manage screen time, build healthy tech habits, and maintain mental clarity."
-              },
-              {
-                icon: <Smartphone className="h-8 w-8 text-amber" />,
-                title: "Telegram Delivery",
-                desc: "Learn on the app you already use. Daily lessons drop straight into your Telegram, making it easy to study during your commute or breaks."
-              },
-              {
-                icon: <Globe className="h-8 w-8 text-amber" />,
-                title: "Community Building",
-                desc: "Join virtual and physical meetups. Network with like-minded individuals, share findings, and grow together in a supportive ecosystem."
-              },
-              {
-                icon: <Award className="h-8 w-8 text-amber" />,
-                title: "Recognized Certificates",
-                desc: "Complete your track, pass the gate quiz, and receive a verifiable certificate to showcase your new skills to employers or clients."
-              }
-            ].map((item) => (
-              <motion.div 
-                key={item.title} 
-                variants={fadeInUp}
-                className="rounded-xl border border-bone/10 bg-coal p-6 backdrop-blur-sm bg-coal/80 hover:border-amber/30 transition-colors group"
-              >
-                <motion.div 
-                  className="mb-4"
-                  variants={hoverScale}
-                  initial="rest"
-                  whileHover="hover"
-                >
-                  {item.icon}
-                </motion.div>
-                <h3 className="font-display text-lg font-bold text-bone">{item.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-smoke">{item.desc}</p>
-              </motion.div>
-            ))}
-          </motion.div>
-        </div>
-      </section>
-
-      {/* Founder & Philosophy */}
-      <section className="py-24 px-5 sm:px-8">
-        <motion.div 
-          className="mx-auto max-w-4xl text-center"
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, margin: "-100px" }}
-          variants={fadeInUp}
-        >
-          <div className="mb-8 flex justify-center">
-            <img 
-              src={founderEhis} 
-              alt="Ehis O. Ferguson, Founder of Tiger's Lair Academy" 
-              className="h-24 w-24 sm:h-32 sm:w-32 rounded-full object-cover border-4 border-amber/30 shadow-2xl"
-            />
-          </div>
-          <h2 className="font-display text-3xl font-extrabold text-bone sm:text-4xl">
-            Built by a critical thinker who teaches, taught by great minds that build.
-          </h2>
-          <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-smoke">
-            Tiger's Lair is an educational platform rooted in mentorship, digital therapy, and community building. 
-            Founded by Ehis O. Ferguson, the academy is designed to bridge the gap between theoretical knowledge and practical application, 
-            ensuring every student is equipped to thrive in the digital economy.
-          </p>
-        </motion.div>
-      </section>
-
-      {/* 4 Cohorts */}
-      <section className="border-y border-bone/10 bg-[#120c05] py-24 px-5 sm:px-8">
-        <div className="mx-auto max-w-7xl text-center">
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, margin: "-100px" }}
-            variants={fadeInUp}
-          >
-            <p className="font-mono text-xs uppercase tracking-[0.3em] text-amber mb-3">The Cycle</p>
-            <h2 className="font-display text-4xl font-extrabold text-bone sm:text-5xl">4 Cohorts. 4 Quarters. 4 Elements.</h2>
-            <p className="mt-4 max-w-2xl mx-auto text-smoke">
-              The year is divided into four distinct intakes, each aligned with an element to guide your learning journey.
-            </p>
-          </motion.div>
-
-          <motion.div 
-            className="mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-4"
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, margin: "-100px" }}
-            variants={staggerContainer}
-          >
-            {[
-              { q: "Q1", el: "Claw", c: "bg-amber/10 text-amber", desc: "Groundwork & Foundations. Building the core skills." },
-              { q: "Q2", el: "Claw", c: "bg-tgsky/10 text-tgsky", desc: "Flow & Adaptation. Exploring data and business logic." },
-              { q: "Q3", el: "Claw", c: "bg-ember/10 text-ember", desc: "Intensity & Execution. Deep dives into hacking and security." },
-              { q: "Q4", el: "Claw", c: "bg-mint/10 text-mint", desc: "Expansion & Mastery. Capstones, mentorship, and graduation." }
-            ].map((item) => (
-              <motion.div 
-                key={item.q} 
-                variants={fadeInUp}
-                className="rounded-xl border border-bone/10 bg-coal p-6 text-left hover:border-amber/30 transition-colors"
-              >
-                <div className={`mb-4 inline-block rounded px-2 py-1 font-mono text-xs font-bold uppercase ${item.c}`}>
-                  {item.q} · {item.el}
+              <input placeholder="Meeting Link (if Virtual)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newMeetup.meetingLink} onChange={e => setNewMeetup({...newMeetup, meetingLink: e.target.value})} />
+              <input placeholder="Physical Location (if In-Person)" className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newMeetup.location} onChange={e => setNewMeetup({...newMeetup, location: e.target.value})} />
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold uppercase text-smoke block mb-1">Date & Time</label>
+                  <input type="datetime-local" required className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newMeetup.scheduledAt} onChange={e => setNewMeetup({...newMeetup, scheduledAt: e.target.value})} />
                 </div>
-                <p className="text-sm text-smoke">{item.desc}</p>
-              </motion.div>
-            ))}
-          </motion.div>
-        </div>
-      </section>
+                <div>
+                  <label className="text-[10px] font-bold uppercase text-smoke block mb-1">Duration (mins)</label>
+                  <input type="number" required className="w-full rounded border border-bone/10 bg-ink p-2 text-sm text-bone focus:border-amber outline-none" value={newMeetup.duration} onChange={e => setNewMeetup({...newMeetup, duration: parseInt(e.target.value) || 60})} />
+                </div>
+              </div>
 
-      {/* Platform Highlights */}
-      <section 
-        className="relative py-24 px-5 sm:px-8 bg-cover bg-center bg-no-repeat"
-        style={{ backgroundImage: `url(${clawBg})` }}
-      >
-        {/* Dark overlay to ensure text and cards remain readable */}
-        <div className="absolute inset-0 bg-coal/90" />
-        
-        <div className="relative mx-auto max-w-7xl">
-          <motion.div 
-            className="mb-16 text-center"
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, margin: "-100px" }}
-            variants={fadeInUp}
-          >
-            <p className="font-mono text-xs uppercase tracking-[0.3em] text-amber mb-3">The Ecosystem</p>
-            <h2 className="font-display text-4xl font-extrabold text-bone sm:text-5xl">Platform Highlights</h2>
-          </motion.div>
+              <button type="submit" className="w-full rounded bg-mint py-2 text-xs font-bold uppercase text-ink hover:bg-mint/90 transition-colors flex items-center justify-center gap-1 mt-2"><Plus className="h-3 w-3" /> Schedule Meetup</button>
+            </form>
+          </div>
 
-          <motion.div 
-            className="grid gap-4 md:grid-cols-2"
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, margin: "-100px" }}
-            variants={staggerContainer}
-          >
-            {[
-              "Real-time progress tracking across all enrolled courses.",
-              "Direct Telegram integration for daily lesson delivery.",
-              "Flexible 1-on-1 mentorship in Tech, Life Skills, and Therapy.",
-              "Bookable counseling sessions via Zoom, Meet, or In-Person.",
-              "Community meetups and networking events.",
-              "Secure payment options via Card or Bank Transfer.",
-              "Verifiable digital certificates upon course completion.",
-              "Admin dashboard for seamless course and mentor management."
-            ].map((feature, i) => (
-              <motion.div 
-                key={i} 
-                variants={fadeInUp}
-                className="flex items-start gap-3 rounded-lg border border-bone/5 bg-coal p-4 hover:border-amber/20 transition-colors"
-              >
-                <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-mint/20 text-mint">
-                  <Check className="h-3 w-3" />
-                </span>
-                <p className="text-sm text-bone">{feature}</p>
-              </motion.div>
-            ))}
-          </motion.div>
+          {/* Existing Meetups List */}
+          <div className="rounded-lg border border-bone/10 bg-coal p-6">
+            <h2 className="font-display text-xl font-bold text-amber mb-4">Upcoming & Past Meetups</h2>
+            <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
+              {meetups.length === 0 ? (
+                <p className="text-sm text-smoke text-center py-8">No meetups scheduled yet.</p>
+              ) : (
+                meetups.sort((a, b) => b.scheduled_at - a.scheduled_at).map((m) => {
+                  const isPast = m.scheduled_at < Date.now();
+                  return (
+                    <div key={m.id} className={`rounded border p-3 flex flex-col gap-2 ${isPast ? 'border-bone/5 bg-ink/30 opacity-70' : 'border-bone/5 bg-ink'}`}>
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="font-bold text-bone">{m.title}</p>
+                          <p className="text-xs text-smoke mt-1">
+                            {new Date(m.scheduled_at).toLocaleDateString()} at {new Date(m.scheduled_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} · {m.duration} mins
+                          </p>
+                          <p className="text-xs text-amber mt-1">{m.format} {m.format === 'Virtual' && m.meeting_link ? `· ${m.meeting_link}` : ''}</p>
+                        </div>
+                        <button onClick={() => promptDeleteMeetup(m.id, m.title)} className="shrink-0 text-xs text-alert hover:underline font-bold flex items-center gap-1"><Trash2 className="h-3 w-3" /> Cancel</button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
         </div>
-      </section>
+      )}
+
+      {activeTab === 'audit' && (
+        <div className="rounded-lg border border-bone/10 bg-coal p-6">
+          <h2 className="font-display text-xl font-bold text-amber mb-2 flex items-center gap-2"><Shield className="h-5 w-5" /> System Audit Logs</h2>
+          <p className="text-xs text-smoke mb-6">A secure record of all administrative actions and system events.</p>
+          <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2">
+            {auditLogs.length === 0 ? (
+              <p className="text-sm text-smoke text-center py-8">No audit logs recorded yet.</p>
+            ) : (
+              auditLogs.map((log) => (
+                <div key={log.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg border border-bone/5 bg-ink p-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <span className="rounded bg-amber/20 px-2 py-0.5 text-[10px] font-bold uppercase text-amber">{log.action.replace(/_/g, ' ')}</span>
+                      <span className="text-xs text-smoke truncate">by {log.admin_id}</span>
+                    </div>
+                    <p className="text-sm text-bone break-words">{log.details}</p>
+                  </div>
+                  <span className="text-xs text-smoke whitespace-nowrap sm:text-right flex items-center gap-1">
+                    <Clock className="h-3 w-3" /> {new Date(log.created_at).toLocaleString()}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      <ConfirmDialog isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} isDestructive={confirmDialog.isDestructive} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))} isLoading={isDialogLoading} />
     </div>
   );
 }
