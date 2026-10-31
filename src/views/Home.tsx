@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 
 // Import your images here
 import heroBg from '../assets/images/hero-bg.png';
-import clawImage from '../assets/images/claw-image.png';
+import clawImage from '../assets/images/claw-image.jpg';
 import founderEhis from '../assets/images/founder-ehis.png';
 import clawBg from '../assets/images/claw.png';
 
