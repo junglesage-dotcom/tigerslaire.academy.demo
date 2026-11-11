@@ -15,19 +15,33 @@ import { FileText, List, Target, Award, CheckCircle, Lock, XCircle, Key } from "
 // ============================================
 function getIntroVideoEmbedUrl(url: string | null | undefined): string | null {
   if (!url) return null;
+  const trimmedUrl = url.trim();
   
-  // 1. YouTube
-  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\s?]+)/);
-  if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}?rel=0&modestbranding=1`;
+  // 1. YouTube (handles watch, shorts, youtu.be, and embed)
+  // Extracts the 11-character video ID
+  const ytMatch = trimmedUrl.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+  if (ytMatch) {
+    return `https://www.youtube.com/embed/${ytMatch[1]}?rel=0&modestbranding=1`;
+  }
   
   // 2. Vimeo
-  const vimeoMatch = url.match(/vimeo\.com\/(\d+)/);
-  if (vimeoMatch) return `https://player.vimeo.com/video/${vimeoMatch[1]}`;
+  const vimeoMatch = trimmedUrl.match(/vimeo\.com\/(\d+)/);
+  if (vimeoMatch) {
+    return `https://player.vimeo.com/video/${vimeoMatch[1]}`;
+  }
   
   // 3. Direct Video Files
-  if (url.endsWith('.mp4') || url.endsWith('.webm') || url.endsWith('.mov')) return url;
+  if (trimmedUrl.match(/\.(mp4|webm|mov)$/i)) {
+    return trimmedUrl;
+  }
   
-  return url;
+  // ✅ SAFETY FALLBACK: If it's a YouTube/Vimeo link but the regex failed, 
+  // return null to prevent the iframe from trying to load a blocked page (like the homepage).
+  if (trimmedUrl.includes('youtube.com') || trimmedUrl.includes('youtu.be') || trimmedUrl.includes('vimeo.com')) {
+    return null;
+  }
+  
+  return trimmedUrl;
 }
 
 export default function CourseDetail({ courseId }: { courseId: string }) {
@@ -302,7 +316,7 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
   const activePrice = currency === 'NGN' ? (course.price || 0) : (course.price_usd || 0);
   const currencySymbol = currency === 'NGN' ? '₦' : '$';
   
-  // ✅ Now safely reads the mapped camelCase property
+  // ✅ Now safely reads the mapped camelCase property and validates it
   const embedUrl = getIntroVideoEmbedUrl(course.introVideoUrl);
 
   const tabs = [
