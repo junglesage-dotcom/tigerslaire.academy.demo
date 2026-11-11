@@ -66,7 +66,13 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
     setLoading(true);
     try {
       const res = await api.getCourse(courseId);
-      setCourse(res.data);
+      
+      // ✅ CRITICAL FIX: Map database snake_case to frontend camelCase for the video URL
+      setCourse({
+        ...res.data,
+        introVideoUrl: res.data.intro_video_url || ''
+      });
+      
       setCompletedLessons([]);
       setQuizAnswers({});
       setQuizSubmitted(false);
@@ -295,6 +301,8 @@ export default function CourseDetail({ courseId }: { courseId: string }) {
   const enrolled = isEnrolled(courseId);
   const activePrice = currency === 'NGN' ? (course.price || 0) : (course.price_usd || 0);
   const currencySymbol = currency === 'NGN' ? '₦' : '$';
+  
+  // ✅ Now safely reads the mapped camelCase property
   const embedUrl = getIntroVideoEmbedUrl(course.introVideoUrl);
 
   const tabs = [

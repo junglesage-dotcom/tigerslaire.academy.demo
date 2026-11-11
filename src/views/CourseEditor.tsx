@@ -34,7 +34,14 @@ export default function CourseEditor() {
     try {
       setLoading(true);
       const res = await api.getCourse(courseId);
-      setCourse(res.data);
+      
+      // ✅ CRITICAL FIX: Map database snake_case to frontend camelCase for the video URL
+      const courseData = {
+        ...res.data,
+        introVideoUrl: res.data.intro_video_url || ''
+      };
+      
+      setCourse(courseData);
       setModules(res.data.modules || []);
 
       const allUnits = (res.data.modules || []).flatMap((m: any) => m.lessons || []);
@@ -70,7 +77,7 @@ export default function CourseEditor() {
       };
       await api.updateCourse(courseId!, payload);
       toast("Course details updated successfully!");
-      loadCourse();
+      loadCourse(); // Reload to confirm it saved and populated correctly
     } catch (e: any) {
       toast(e.message || "Failed to save details");
     } finally {
