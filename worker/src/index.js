@@ -984,7 +984,7 @@ export default {
         return json({ data: { id: courseId } });
       }
 
-      // ✅ UPDATED: Added 'introVideoUrl' to the allowed fields array for updates
+      // ✅ FIXED: Map frontend camelCase 'introVideoUrl' to database snake_case 'intro_video_url'
       if (path.startsWith('/api/admin/courses/') && method === 'PUT' && !path.includes('/modules') && !path.includes('/lessons') && !path.includes('/quiz')) {
         const token = getToken();
         const admin = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(token).first();
@@ -993,8 +993,16 @@ export default {
         const data = await request.json();
         const fields = []; const values = [];
         for (const [key, val] of Object.entries(data)) {
-          if (['outcomes', 'skills'].includes(key)) { fields.push(`${key} = ?`); values.push(JSON.stringify(val)); } 
-          else if (['code', 'title', 'tagline', 'level', 'path', 'weeks', 'price', 'price_usd', 'hue', 'icon', 'summary', 'channel', 'category', 'introVideoUrl'].includes(key)) { fields.push(`${key} = ?`); values.push(val); }
+          if (['outcomes', 'skills'].includes(key)) { 
+            fields.push(`${key} = ?`); 
+            values.push(JSON.stringify(val)); 
+          } 
+          else if (['code', 'title', 'tagline', 'level', 'path', 'weeks', 'price', 'price_usd', 'hue', 'icon', 'summary', 'channel', 'category', 'introVideoUrl'].includes(key)) { 
+            // ✅ FIX: Map frontend field names to database column names
+            const dbColumnName = key === 'introVideoUrl' ? 'intro_video_url' : key;
+            fields.push(`${dbColumnName} = ?`); 
+            values.push(val); 
+          }
         }
         if (fields.length > 0) { 
           values.push(courseId); 
